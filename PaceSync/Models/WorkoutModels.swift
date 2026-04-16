@@ -113,6 +113,37 @@ struct WorkoutDay: Identifiable, Codable {
         let types = segments.map { $0.type.rawValue }.joined(separator: ", ")
         return types.isEmpty ? "Rest" : types
     }
+
+    // Explicit memberwise init (required because we define a custom init(from:) below,
+    // which suppresses Swift's synthesised memberwise initialiser).
+    // nonisolated so it can be called from background TaskGroup contexts.
+    nonisolated init(id: UUID, week: Int, dayOfWeek: DayOfWeek, title: String,
+                     notes: String?, segments: [WorkoutSegment], isRaceDay: Bool = false) {
+        self.id        = id
+        self.week      = week
+        self.dayOfWeek = dayOfWeek
+        self.title     = title
+        self.notes     = notes
+        self.segments  = segments
+        self.isRaceDay = isRaceDay
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, week, dayOfWeek, title, notes, segments, isRaceDay
+    }
+
+    // Custom decoder: falls back to false when isRaceDay is absent so plans saved
+    // before this field was added decode without errors.
+    init(from decoder: Decoder) throws {
+        let c  = try decoder.container(keyedBy: CodingKeys.self)
+        id        = try c.decode(UUID.self,             forKey: .id)
+        week      = try c.decode(Int.self,              forKey: .week)
+        dayOfWeek = try c.decode(DayOfWeek.self,        forKey: .dayOfWeek)
+        title     = try c.decode(String.self,           forKey: .title)
+        notes     = try c.decodeIfPresent(String.self,  forKey: .notes)
+        segments  = try c.decode([WorkoutSegment].self, forKey: .segments)
+        isRaceDay = (try? c.decodeIfPresent(Bool.self,  forKey: .isRaceDay)) ?? false
+    }
 }
 
 enum DayOfWeek: String, Codable, CaseIterable {

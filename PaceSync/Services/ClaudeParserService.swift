@@ -275,7 +275,7 @@ class ClaudeParserService {
 
     // MARK: - Decode
 
-    private func decodeDays(from jsonString: String) throws -> [WorkoutDay] {
+    private nonisolated func decodeDays(from jsonString: String) throws -> [WorkoutDay] {
         print("🏃 [ClaudeParser] Raw JSON:\n\(jsonString)")
         var cleaned = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
         if cleaned.hasPrefix("```") {

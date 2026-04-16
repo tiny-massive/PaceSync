@@ -1,0 +1,22 @@
+# Xcode
+*.xcuserstate
+xcuserdata/
+DerivedData/
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.perspectivev3
+!default.perspectivev3
+*.xccheckout
+*.xcscmblueprint
+
+# macOS
+.DS_Store
+
+# Swift Package Manager
+.build/
+Packages/
+*.resolved
+
+# Secrets — NEVER commit this file
+PaceSync/Services/Secrets.swift

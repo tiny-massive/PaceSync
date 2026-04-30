@@ -463,6 +463,12 @@ struct SettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("distanceUnit") private var distanceUnitRaw: String = DistanceUnit.miles.rawValue
 
+    private var appVersion: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        let build   = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
+        return "\(version) (\(build))"
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -479,6 +485,21 @@ struct SettingsSheet: View {
                         .listRowBackground(Color(UIColor.systemGray6))
                     } header: {
                         Text("Units")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Section {
+                        HStack {
+                            Text("Version")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Text(appVersion)
+                                .foregroundStyle(.secondary)
+                                .font(.subheadline.monospacedDigit())
+                        }
+                        .listRowBackground(Color(UIColor.systemGray6))
+                    } header: {
+                        Text("About")
                             .foregroundStyle(.secondary)
                     }
                 }

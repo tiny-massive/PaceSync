@@ -23,7 +23,13 @@ class ClaudeParserService {
         progressCallback: ((Double, String) -> Void)? = nil
     ) async throws -> TrainingPlan {
 
-        let chunks = splitIntoWeeks(text)
+        // If the text has no week or day-of-week markers, it's a single pasted workout.
+        // Wrap it so Claude gets unambiguous structure rather than guessing at day boundaries.
+        let processedText = looksLikeSingleWorkout(text)
+            ? "Week 1, Wednesday:\n\(text)"
+            : text
+
+        let chunks = splitIntoWeeks(processedText)
         let total  = chunks.count
 
         print("📦 [ClaudeParser] Split into \(total) chunk(s)")
@@ -31,7 +37,7 @@ class ClaudeParserService {
         // Single-chunk fallback — no week headers found, parse as one call
         if total <= 1 {
             progressCallback?(0.1, "Parsing plan…")
-            let json = try await callClaudeWithCache(text)
+            let json = try await callClaudeWithCache(processedText)
             progressCallback?(1.0, "Done!")
             return assemblePlan(from: try decodeDays(from: json), title: title)
         }
@@ -66,12 +72,65 @@ class ClaudeParserService {
         return assemblePlan(from: allDays, title: title)
     }
 
+    // MARK: - Single Workout Detection
+
+    /// Returns true when the text has no week numbers or day-of-week labels —
+    /// i.e. the user pasted a single workout session rather than a full plan.
+    private func looksLikeSingleWorkout(_ text: String) -> Bool {
+        let hasWeekMarker = text.range(
+            of: #"(?i)\bweek\s*\d"#, options: .regularExpression) != nil
+        let hasDayMarker = text.range(
+            of: #"(?i)\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\b"#,
+            options: .regularExpression) != nil
+        let result = !hasWeekMarker && !hasDayMarker
+        if result { print("📦 [ClaudeParser] Single workout detected — wrapping as Week 1 Wednesday") }
+        return result
+    }
+
+    /// Merges pages that begin mid-sentence into the previous page.
+    /// A page "starts mid-sentence" when its first non-whitespace content is NOT a
+    /// "Week N" label — meaning it's the continuation of a table cell cut off at a
+    /// page boundary. Merging gives Claude the complete cell content in one chunk.
+    private func mergeOrphanedPageStarts(_ pages: [String]) -> [String] {
+        var merged: [String] = []
+        for page in pages {
+            let startsNewWeek = page.range(
+                of: #"(?i)^week\s+\d"#, options: .regularExpression) != nil
+            if !startsNewWeek && !merged.isEmpty {
+                // Continuation — glue onto the previous chunk
+                merged[merged.count - 1] += "\n\n" + page
+                print("📦 [ClaudeParser] Merged orphaned page continuation into previous chunk")
+            } else {
+                merged.append(page)
+            }
+        }
+        return merged
+    }
+
     // MARK: - Week Chunking
 
-    /// Splits plan text on "Week N" / "WEEK N" boundaries.
-    /// Returns [text] unchanged if no week headers are detected (≤1 match).
+    /// Splits plan text into chunks for parallel parsing.
+    /// Prefers page-based splitting (from PDFs) over week-header splitting,
+    /// because table-format PDFs produce scrambled text that confuses week-header detection.
     private func splitIntoWeeks(_ text: String) -> [String] {
-        // Matches "Week 1", "WEEK 12:", "Week 3 of 16", "WEEK ONE" etc. at line start
+        // Page-based splitting: PDFImporter inserts "=== PAGE BREAK ===" markers.
+        // Each page is a self-contained unit — much more reliable for grid/table PDFs.
+        let pageBreak = "\n\n=== PAGE BREAK ===\n\n"
+        if text.contains(pageBreak) {
+            let rawPages = text.components(separatedBy: pageBreak)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if rawPages.count > 1 {
+                // Merge any page that starts mid-sentence (i.e. no "Week N" near the top).
+                // This handles table cells that are split across a page boundary —
+                // e.g. Week 9 Wednesday's cell spans pages 3→4 in this plan.
+                let chunks = mergeOrphanedPageStarts(rawPages)
+                print("📦 [ClaudeParser] Page-based split: \(rawPages.count) page(s) → \(chunks.count) chunk(s)")
+                return chunks
+            }
+        }
+
+        // Week-header splitting: for plain-text plans with "Week N" headers.
         guard let regex = try? NSRegularExpression(
             pattern: #"(?m)^week\s+\d+"#,
             options: .caseInsensitive
@@ -128,6 +187,15 @@ class ClaudeParserService {
             }
           ]
         }
+
+        COLUMN-FORMAT PLANS: Training plans often use a table where columns are days (Mon–Sun) and rows are weeks. PDFKit extracts these column by column, so the text you receive is already in reading order: first all of Week N's Monday text, then Tuesday, etc. Each chunk may contain 2–5 complete weeks. Parse ALL weeks and ALL days you see — do not stop after the first week.
+
+        If the text starts mid-sentence (e.g. "seconds easy recovery..."), it is the continuation of a Wednesday or Thursday workout from the previous page that was cut off. Use context clues (nearby week/day structure) to assign it to the correct week and day.
+
+        Ignore any unit conversion tables (Miles/Kilometers reference tables) — these are not workout data.
+
+        SINGLE WORKOUT INPUT: If the input contains no week numbers and no day-of-week labels, treat the ENTIRE input as one single workout day (week: 1, dayOfWeek: "wednesday"). Comma-separated steps and line breaks within a workout description are SEGMENTS of that one day — NOT separate days. For example:
+        "3 mi easy warmup, 5 miles tempo, 6 x 45 sec fast, 2 mi cooldown" → ONE day with four segments (warmup, tempo, intervals, cooldown).
 
         GENERAL RULES:
         - dayOfWeek must be lowercase: monday, tuesday, wednesday, thursday, friday, saturday, sunday
@@ -278,8 +346,21 @@ class ClaudeParserService {
     private nonisolated func decodeDays(from jsonString: String) throws -> [WorkoutDay] {
         print("🏃 [ClaudeParser] Raw JSON:\n\(jsonString)")
         var cleaned = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Strip markdown code fences (``` or ```json ... ```)
         if cleaned.hasPrefix("```") {
-            cleaned = cleaned.components(separatedBy: "\n").dropFirst().dropLast().joined(separator: "\n")
+            let lines = cleaned.components(separatedBy: "\n")
+            cleaned = lines.dropFirst().dropLast().joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        // If the response has surrounding prose or an object wrapper, extract the
+        // outermost JSON array by finding the first '[' and last ']'.
+        if !cleaned.hasPrefix("[") {
+            if let start = cleaned.firstIndex(of: "["),
+               let end = cleaned.lastIndex(of: "]") {
+                cleaned = String(cleaned[start...end])
+            }
         }
 
         guard let data = cleaned.data(using: .utf8) else {
@@ -287,7 +368,16 @@ class ClaudeParserService {
                           userInfo: [NSLocalizedDescriptionKey: "Could not encode response"])
         }
 
-        let dtos = try JSONDecoder().decode([WorkoutDayDTO].self, from: data)
+        let dtos: [WorkoutDayDTO]
+        do {
+            dtos = try JSONDecoder().decode([WorkoutDayDTO].self, from: data)
+        } catch {
+            let preview = String(cleaned.prefix(300))
+            print("🏃 [ClaudeParser] Decode error: \(error)\nResponse preview: \(preview)")
+            throw NSError(domain: "ClaudeParser", code: -3, userInfo: [
+                NSLocalizedDescriptionKey: "Could not parse the training plan. Please try again or paste the plan as text."
+            ])
+        }
 
         return dtos.map { dto in
             let segments = dto.segments.map { seg in
@@ -319,12 +409,32 @@ class ClaudeParserService {
     }
 
     private func assemblePlan(from days: [WorkoutDay], title: String) -> TrainingPlan {
-        let grouped = Dictionary(grouping: days) { $0.week }
+        // Deduplicate: when two chunks both produce a day for the same (week, dayOfWeek),
+        // keep the most detailed one (most segments; break ties with notes presence).
+        var best: [String: WorkoutDay] = [:]
+        for day in days {
+            let key = "\(day.week)-\(day.dayOfWeek.rawValue)"
+            if let existing = best[key] {
+                let newScore = day.segments.count * 10 + (day.notes != nil ? 1 : 0)
+                let oldScore = existing.segments.count * 10 + (existing.notes != nil ? 1 : 0)
+                if newScore > oldScore { best[key] = day }
+            } else {
+                best[key] = day
+            }
+        }
+        let uniqueDays = Array(best.values)
+
+        let grouped = Dictionary(grouping: uniqueDays) { $0.week }
         let sortedWeeks = grouped.keys.sorted().map { week in
             let order = DayOfWeek.allCases
             return (grouped[week] ?? []).sorted {
                 (order.firstIndex(of: $0.dayOfWeek) ?? 0) < (order.firstIndex(of: $1.dayOfWeek) ?? 0)
             }
+        }
+        print("🗓️ [ClaudeParser] Assembled plan '\(title)': \(sortedWeeks.count) week(s), \(uniqueDays.count) day(s) (deduped from \(days.count))")
+        for (i, week) in sortedWeeks.enumerated() {
+            let summary = week.map { "\($0.dayOfWeek.rawValue): \($0.title)" }.joined(separator: ", ")
+            print("  Week \(i + 1): \(summary)")
         }
         return TrainingPlan(id: UUID(), title: title, weeks: sortedWeeks)
     }

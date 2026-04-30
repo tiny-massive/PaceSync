@@ -489,6 +489,27 @@ struct SettingsSheet: View {
                     }
 
                     Section {
+                        Button(role: .destructive) {
+                            PlanParseCache.shared.clearAll()
+                        } label: {
+                            HStack {
+                                Text("Clear Parse Cache")
+                                Spacer()
+                                Text(PlanParseCache.shared.cacheSizeString)
+                                    .foregroundStyle(.secondary)
+                                    .font(.subheadline)
+                            }
+                        }
+                        .listRowBackground(Color(UIColor.systemGray6))
+                    } header: {
+                        Text("Cache")
+                            .foregroundStyle(.secondary)
+                    } footer: {
+                        Text("Forces plans to be re-parsed from scratch on next upload.")
+                            .foregroundStyle(.tertiary)
+                    }
+
+                    Section {
                         HStack {
                             Text("Version")
                                 .foregroundStyle(.primary)

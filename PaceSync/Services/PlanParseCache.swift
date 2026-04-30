@@ -9,6 +9,10 @@ final class PlanParseCache {
 
     static let shared = PlanParseCache()
 
+    /// Bump this any time the Claude prompt changes significantly.
+    /// All existing cache entries will be ignored automatically.
+    private static let promptVersion = "v4"
+
     private let cacheDir: URL
 
     private init() {
@@ -61,7 +65,9 @@ final class PlanParseCache {
     // MARK: - Private
 
     private func cacheURL(for text: String) -> URL {
-        let digest = SHA256.hash(data: Data(text.utf8))
+        // Include promptVersion in the hash so prompt changes invalidate old entries.
+        let keyData = Data("\(Self.promptVersion):\(text)".utf8)
+        let digest = SHA256.hash(data: keyData)
         let hex = digest.compactMap { String(format: "%02x", $0) }.joined()
         return cacheDir.appendingPathComponent("\(hex).json")
     }

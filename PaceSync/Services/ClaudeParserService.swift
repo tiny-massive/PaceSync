@@ -1,7 +1,11 @@
 // ClaudeParserService.swift
-// Sends training plan text to the Claude API and parses the JSON response.
-// Splits multi-week plans into per-week chunks, parses them concurrently, and
-// caches each chunk so re-uploads cost zero tokens for unchanged weeks.
+// Two-phase parsing pipeline:
+//   Phase 1 — structural extraction: identifies each week/day and copies its raw workout text
+//   Phase 2 — segment parsing: given one day's raw text, returns its structured segments
+//
+// Separating the concerns means Claude has a single focused job in each call,
+// which dramatically improves accuracy for complex workouts.
+// Both phases are cached independently — re-uploads only re-parse days whose text changed.
 
 import Foundation
 
@@ -11,255 +15,196 @@ class ClaudeParserService {
 
     // MARK: - Public Entry Point
 
-    /// Parses a training plan, splitting it into per-week chunks when possible.
-    /// - Parameters:
-    ///   - text: The full plan text (from PDF, paste, etc.)
-    ///   - title: Used as the plan title in the returned TrainingPlan.
-    ///   - progressCallback: Called on the calling actor after each week is parsed.
-    ///     Receives a 0…1 fraction and a human-readable phase string.
     func parseTrainingPlan(
         from text: String,
         title: String,
         progressCallback: ((Double, String) -> Void)? = nil
     ) async throws -> TrainingPlan {
 
-        // If the text has no week or day-of-week markers, it's a single pasted workout.
-        // Wrap it so Claude gets unambiguous structure rather than guessing at day boundaries.
         let processedText = looksLikeSingleWorkout(text)
             ? "Week 1, Wednesday:\n\(text)"
             : text
 
         let chunks = splitIntoWeeks(processedText)
-        let total  = chunks.count
+        print("📦 [ClaudeParser] \(chunks.count) chunk(s)")
 
-        print("📦 [ClaudeParser] Split into \(total) chunk(s)")
+        progressCallback?(0.0, "Extracting schedule…")
 
-        // Single-chunk fallback — no week headers found, parse as one call
-        if total <= 1 {
-            progressCallback?(0.1, "Parsing plan…")
-            let json = try await callClaudeWithCache(processedText)
-            progressCallback?(1.0, "Done!")
-            return assemblePlan(from: try decodeDays(from: json), title: title)
-        }
-
-        // Multi-chunk: parse up to 3 weeks concurrently for speed
-        var allDaysByIndex: [(index: Int, days: [WorkoutDay])] = []
-
-        allDaysByIndex = try await withThrowingTaskGroup(of: (Int, [WorkoutDay]).self) { group in
-            for (index, chunk) in chunks.enumerated() {
+        // ── Phase 1: extract day structures from all chunks concurrently ──────────
+        let rawStructures: [DayStructureDTO] = try await withThrowingTaskGroup(
+            of: [DayStructureDTO].self
+        ) { group in
+            for chunk in chunks {
                 group.addTask { [self] in
-                    let json = try await self.callClaudeWithCache(chunk)
-                    return (index, try self.decodeDays(from: json))
+                    try await self.extractDayStructures(from: chunk)
                 }
             }
+            var all: [[DayStructureDTO]] = []
+            for try await batch in group { all.append(batch) }
+            return all.flatMap { $0 }
+        }
 
-            var results: [(Int, [WorkoutDay])] = []
-            for try await (index, days) in group {
-                results.append((index, days))
+        let structures = deduplicateStructures(rawStructures)
+        print("📋 [ClaudeParser] Phase 1: \(structures.count) day(s) extracted")
+        progressCallback?(0.25, "Parsing workouts…")
+
+        // ── Phase 2: parse segments for every non-rest day concurrently ──────────
+        let restDays: [WorkoutDay] = structures
+            .filter { isRestDay($0.rawText) }
+            .map { makeWorkoutDay(from: $0, segments: []) }
+
+        let workoutStructures = structures.filter { !isRestDay($0.rawText) }
+        let total = workoutStructures.count
+
+        let parsedWorkoutDays: [WorkoutDay] = try await withThrowingTaskGroup(
+            of: WorkoutDay.self
+        ) { group in
+            for dto in workoutStructures {
+                group.addTask { [self] in
+                    let segs = try await self.parseSegments(from: dto.rawText)
+                    return self.makeWorkoutDay(from: dto, segments: segs)
+                }
+            }
+            var days: [WorkoutDay] = []
+            var done = 0
+            for try await day in group {
+                days.append(day)
+                done += 1
                 progressCallback?(
-                    Double(results.count) / Double(total),
-                    "Parsed \(results.count) of \(total) weeks…"
+                    0.25 + 0.75 * Double(done) / Double(max(total, 1)),
+                    "Parsed \(done) of \(total) workouts…"
                 )
             }
-            return results
+            return days
         }
 
-        // Reassemble in original week order
-        let allDays = allDaysByIndex
-            .sorted { $0.index < $1.index }
-            .flatMap { $0.days }
-
-        return assemblePlan(from: allDays, title: title)
+        progressCallback?(1.0, "Done!")
+        return assemblePlan(from: restDays + parsedWorkoutDays, title: title)
     }
 
-    // MARK: - Single Workout Detection
+    // MARK: - Phase 1: Structure Extraction
 
-    /// Returns true when the text has no week numbers or day-of-week labels —
-    /// i.e. the user pasted a single workout session rather than a full plan.
-    private func looksLikeSingleWorkout(_ text: String) -> Bool {
-        let hasWeekMarker = text.range(
-            of: #"(?i)\bweek\s*\d"#, options: .regularExpression) != nil
-        let hasDayMarker = text.range(
-            of: #"(?i)\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\b"#,
-            options: .regularExpression) != nil
-        let result = !hasWeekMarker && !hasDayMarker
-        if result { print("📦 [ClaudeParser] Single workout detected — wrapping as Week 1 Wednesday") }
-        return result
+    private func extractDayStructures(from chunk: String) async throws -> [DayStructureDTO] {
+        let json = try await callClaudeWithCache(chunk, prefix: "p1", prompt: buildPhase1Prompt)
+        return try decodeDayStructures(from: json)
     }
 
-    /// Merges pages that begin mid-sentence into the previous page.
-    /// A page "starts mid-sentence" when its first non-whitespace content is NOT a
-    /// "Week N" label — meaning it's the continuation of a table cell cut off at a
-    /// page boundary. Merging gives Claude the complete cell content in one chunk.
-    private func mergeOrphanedPageStarts(_ pages: [String]) -> [String] {
-        var merged: [String] = []
-        for page in pages {
-            let startsNewWeek = page.range(
-                of: #"(?i)^week\s+\d"#, options: .regularExpression) != nil
-            if !startsNewWeek && !merged.isEmpty {
-                // Continuation — glue onto the previous chunk
-                merged[merged.count - 1] += "\n\n" + page
-                print("📦 [ClaudeParser] Merged orphaned page continuation into previous chunk")
-            } else {
-                merged.append(page)
-            }
-        }
-        return merged
-    }
-
-    // MARK: - Week Chunking
-
-    /// Splits plan text into chunks for parallel parsing.
-    /// Prefers page-based splitting (from PDFs) over week-header splitting,
-    /// because table-format PDFs produce scrambled text that confuses week-header detection.
-    private func splitIntoWeeks(_ text: String) -> [String] {
-        // Page-based splitting: PDFImporter inserts "=== PAGE BREAK ===" markers.
-        // Each page is a self-contained unit — much more reliable for grid/table PDFs.
-        let pageBreak = "\n\n=== PAGE BREAK ===\n\n"
-        if text.contains(pageBreak) {
-            let rawPages = text.components(separatedBy: pageBreak)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-            if rawPages.count > 1 {
-                // Merge any page that starts mid-sentence (i.e. no "Week N" near the top).
-                // This handles table cells that are split across a page boundary —
-                // e.g. Week 9 Wednesday's cell spans pages 3→4 in this plan.
-                let chunks = mergeOrphanedPageStarts(rawPages)
-                print("📦 [ClaudeParser] Page-based split: \(rawPages.count) page(s) → \(chunks.count) chunk(s)")
-                return chunks
-            }
-        }
-
-        // Week-header splitting: for plain-text plans with "Week N" headers.
-        guard let regex = try? NSRegularExpression(
-            pattern: #"(?m)^week\s+\d+"#,
-            options: .caseInsensitive
-        ) else { return [text] }
-
-        let nsText  = text as NSString
-        let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
-
-        guard matches.count > 1 else { return [text] }
-
-        return matches.enumerated().map { i, match in
-            let start = match.range.location
-            let end   = i + 1 < matches.count ? matches[i + 1].range.location : nsText.length
-            return nsText
-                .substring(with: NSRange(location: start, length: end - start))
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-    }
-
-    // MARK: - Cache-aware Claude Call
-
-    private func callClaudeWithCache(_ chunk: String) async throws -> String {
-        if let cached = PlanParseCache.shared.cachedJSON(for: chunk) {
-            print("✅ [ClaudeParser] Cache hit")
-            return cached
-        }
-        print("🌐 [ClaudeParser] Cache miss — calling Claude")
-        let json = try await callClaude(with: buildPrompt(for: chunk))
-        PlanParseCache.shared.store(json: json, for: chunk)
-        return json
-    }
-
-    // MARK: - Prompt
-
-    private func buildPrompt(for text: String) -> String {
+    private func buildPhase1Prompt(for text: String) -> String {
         """
-        You are a running coach assistant. Parse the following training plan text and return ONLY a JSON array — no markdown, no explanation, just raw JSON.
+        You are a running coach assistant. Extract the training schedule structure from the text \
+        below. The text may come from a table-format PDF (columns = days Mon–Sun, rows = weeks).
 
-        Each element represents one workout day with this exact structure:
+        For EACH day you identify, output one JSON object:
         {
           "week": 1,
           "dayOfWeek": "monday",
-          "title": "Easy Run",
-          "notes": "Optional coach note",
+          "title": "Easy Run w/ Strides",
+          "notes": "optional coach commentary",
           "isRaceDay": false,
-          "segments": [
-            {
-              "type": "warmup|cooldown|easy|interval|tempo|hills|rest",
-              "durationSeconds": 600,
-              "distanceMiles": 1.5,
-              "distanceMeters": 800,
-              "reps": 4,
-              "effort": "easy|marathon|threshold|tenK|fiveK|threeK"
-            }
-          ]
+          "rawText": "complete verbatim workout description for this day"
         }
 
-        COLUMN-FORMAT PLANS: Training plans often use a table where columns are days (Mon–Sun) and rows are weeks. PDFKit extracts these column by column, so the text you receive is already in reading order: first all of Week N's Monday text, then Tuesday, etc. Each chunk may contain 2–5 complete weeks. Parse ALL weeks and ALL days you see — do not stop after the first week.
+        EXTRACTION RULES:
+        - Output exactly 7 entries per complete week (monday through sunday)
+        - dayOfWeek: lowercase only
+        - rawText: copy the EXACT source text for this day's workout. For rest days use "Rest"
+        - title: brief descriptive name ("Rest Day", "Easy Run", "Track Intervals", "Long Run w/ Tempo")
+        - notes: coach tips / context accompanying the workout — omit if none
+        - isRaceDay: true ONLY for the marathon / race day itself
+        - Each chunk may contain 2–5 complete weeks — extract ALL of them, do not stop early
+        - If text starts mid-sentence it is a continuation from a page break — assign by context
+        - Ignore unit conversion tables (Miles / Kilometers)
 
-        If the text starts mid-sentence (e.g. "seconds easy recovery..."), it is the continuation of a Wednesday or Thursday workout from the previous page that was cut off. Use context clues (nearby week/day structure) to assign it to the correct week and day.
+        TABLE BOUNDARY RULES (table-format PDFs):
+        - Cells read left-to-right: Mon → Tue → Wed → Thu → Fri → Sat → Sun per week row
+        - A new day starts with a fresh mileage statement ("8-12 mi", "3 mi easy") or "Rest"
+        - "Optional uphill TM", "Full strength routine" are NOTES appended inside a cell — \
+        they do NOT begin a new day
+        - The next mileage or "Rest" after those notes belongs to the NEXT day
 
-        Ignore any unit conversion tables (Miles/Kilometers reference tables) — these are not workout data.
+        Return ONLY a JSON array starting with [ and ending with ].
 
-        SINGLE WORKOUT INPUT: If the input contains no week numbers and no day-of-week labels, treat the ENTIRE input as one single workout day (week: 1, dayOfWeek: "wednesday"). Comma-separated steps and line breaks within a workout description are SEGMENTS of that one day — NOT separate days. For example:
-        "3 mi easy warmup, 5 miles tempo, 6 x 45 sec fast, 2 mi cooldown" → ONE day with four segments (warmup, tempo, intervals, cooldown).
+        Training plan text:
+        \(text)
+        """
+    }
+
+    private nonisolated func decodeDayStructures(from jsonString: String) throws -> [DayStructureDTO] {
+        let cleaned = extractJSONArray(from: jsonString)
+        guard let data = cleaned.data(using: .utf8) else {
+            throw parserError("Could not encode Phase 1 response", code: -2)
+        }
+        do {
+            return try JSONDecoder().decode([DayStructureDTO].self, from: data)
+        } catch {
+            print("📋 [ClaudeParser] Phase 1 decode error: \(error)\nPreview: \(cleaned.prefix(300))")
+            throw parserError("Could not extract schedule structure. Please try again.", code: -3)
+        }
+    }
+
+    // MARK: - Phase 2: Segment Parsing
+
+    private func parseSegments(from rawText: String) async throws -> [WorkoutSegment] {
+        guard !isRestDay(rawText) else { return [] }
+        let json = try await callClaudeWithCache(rawText, prefix: "p2", prompt: buildPhase2Prompt)
+        return (try? decodeSegments(from: json)) ?? []
+    }
+
+    private func buildPhase2Prompt(for rawText: String) -> String {
+        """
+        Parse the following single workout description into a JSON array of training segments.
+        Return ONLY the flat segments array — no day wrapper, no week field.
+        If this is a rest day, return [].
+
+        Workout: \(rawText)
+
+        Segment schema:
+        {
+          "type": "warmup|cooldown|easy|interval|tempo|hills|rest",
+          "durationSeconds": 600,
+          "distanceMiles": 1.5,
+          "distanceMeters": 800,
+          "reps": 4,
+          "effort": "easy|marathon|threshold|tenK|fiveK|threeK",
+          "setIndex": 1
+        }
 
         GENERAL RULES:
-        - dayOfWeek must be lowercase: monday, tuesday, wednesday, thursday, friday, saturday, sunday
-        - Set isRaceDay: true on the single day that is explicitly the race (e.g. "Race Day", "Marathon", "5K Race"). Omit or set false for all other days. Races can fall on any day of the week — friday, saturday, or sunday are all common.
-        - Include every training day in the provided text
-        - For ranges (e.g. "8-10 miles", "4-5 x"), use the lower bound
-        - Use distanceMiles for road/trail distances (miles or km), distanceMeters for track distances specified in meters
-        - Use durationSeconds only when the workout explicitly states a time (e.g. "30 min easy")
-        - Never set durationSeconds to 0 — omit it entirely if not applicable
-        - effort is optional; omit if not specified
-        - Rest days: use an empty segments array []
-        - For easy runs with distance RANGES (e.g. "6-8 miles easy", "4-5 mi"), omit distanceMiles entirely — leave segments with NO distance and NO duration so the workout goal is "open" (the runner decides how far to go)
-        - Return ONLY the JSON array, starting with [ and ending with ]
-
-        TITLE RULES — make titles descriptive:
-        - Use specific titles that reflect the workout content, NOT generic names
-        - Examples: "Track Intervals", "Tempo Run", "Long Run", "Easy Recovery", "Hill Repeats", "Rest Day", "Race Pace Long Run", "Speed Work", "Progression Run"
-        - If the workout has intervals, name it after the primary interval type (e.g. "Track Intervals", "800m Repeats")
-        - If it's a long run with pace work, say so (e.g. "Long Run w/ Marathon Pace")
-        - If it's a pure easy/recovery run, use "Easy Run" or "Recovery Run"
-        - Rest days should be titled "Rest Day"
-
-        GRADUATED DISTANCE SETS in long runs:
-        - Patterns like "5/4/3/2/1 miles at M effort" or "3-2-1 mi at tempo" are graduated sets
-        - Each distance is a separate interval segment, all sharing the SAME setIndex
-        - Example: "5/4/3/2/1 at marathon pace with 1 min easy between":
-          {type:interval, distanceMiles:5, effort:marathon, setIndex:1},
-          {type:rest, durationSeconds:60, effort:easy, setIndex:1},
-          {type:interval, distanceMiles:4, effort:marathon, setIndex:1},
-          {type:rest, durationSeconds:60, effort:easy, setIndex:1},
-          ... and so on for 3, 2, 1
+        - Segments appear in the ORDER they are described in the text — never reorder them
+        - For ranges ("8-10 miles", "4-5 x"), always use the LOWER bound
+        - distanceMiles for road/trail; distanceMeters for track distances given in meters
+        - durationSeconds ONLY when a time is explicitly stated ("30 min", "5 min easy")
+        - Never set durationSeconds to 0 — omit entirely if not applicable
+        - effort is optional — omit if not specified
+        - For easy runs with distance RANGES ("6-8 miles easy"), omit distanceMiles (open workout)
 
         EFFORT MAPPINGS:
-        - easy/jog/recovery pace/float/float recovery → easy
-        - marathon/MP/marathon pace → marathon
-        - threshold/tempo/T-pace/LT/1-hour effort/hour effort → threshold
-        - 10K effort/10k pace → tenK
-        - 5K effort/5k pace → fiveK
-        - 3K effort/3k pace/mile pace/fast/hard → threeK
+        - easy / jog / recovery / float → easy
+        - marathon / MP / marathon pace → marathon
+        - threshold / tempo / T-pace / LT / 1-hour effort → threshold
+        - 10K effort / 10k pace → tenK
+        - 5K effort / 5k pace → fiveK
+        - 3K effort / 3k pace / mile pace / fast / hard / faster → threeK
 
-        EFFORT ORDERING — critical:
-        - When distances and efforts are listed in parallel order (e.g. "800/400/200 at 10K/5K/3K"), the FIRST distance maps to the FIRST effort, SECOND to SECOND, THIRD to THIRD.
-        - "800/400/200 at 10K/5K/3K" → 800m=tenK, 400m=fiveK, 200m=threeK
-        - "800/400/200 fast" with hint "(10k/5k/3k effort on each set)" → 800m=tenK, 400m=fiveK, 200m=threeK
-        - Never assign the same effort to all distances in a graduated set; always respect the ordering.
+        EFFORT + DISTANCE ORDERING — critical:
+        - Honour the literal order described. "2 miles at M effort plus 1 mile faster" →
+          first segment 2mi@marathon, second segment 1mi@threshold (NOT reversed)
+        - "800/400/200 at 10K/5K/3K" → 800m=tenK, 400m=fiveK, 200m=threeK (parallel mapping)
 
-        DISTANCE RULES — critical:
-        - Track distances without units (e.g. 800, 400, 200, 1600, 1200) are always METERS — use distanceMeters
-        - "800m", "400m", "200m" → distanceMeters: 800 / 400 / 200
-        - Mile/km distances → distanceMiles (convert km: divide by 1.60934)
-        - NEVER convert track distances to time. Do NOT approximate "800m ≈ 4 min" — always use distanceMeters: 800
-        - durationSeconds is ONLY for workouts explicitly stated as time-based (e.g. "30 min easy", "5 min tempo")
-        - Recovery/rest segments in track workouts ALSO use distanceMeters (e.g. "400 easy" → distanceMeters: 400)
-        - When in doubt between distanceMeters and durationSeconds, prefer distanceMeters for any track workout
+        DISTANCE RULES:
+        - Bare numbers without units (800, 400, 200, 1600) = METERS → distanceMeters
+        - "800m", "400m" → distanceMeters: 800, 400
+        - NEVER convert track distances to time
+        - Recovery segments in track workouts also use distanceMeters ("400 easy" → distanceMeters: 400)
 
-        INTERVAL SETS — grouping rules:
-        1. Simple set "N x distance" with one recovery: use reps:N, NO setIndex needed.
-           {"type":"interval","distanceMeters":800,"reps":4}, {"type":"rest","distanceMeters":400}
+        INTERVAL SETS:
+        1. Simple "N x distance" with one recovery: reps:N, no setIndex
+           4 x 800 with 400 easy → {"type":"interval","distanceMeters":800,"reps":4}, \
+        {"type":"rest","distanceMeters":400}
 
-        2. Complex set "N x d1/d2/d3 with multiple recoveries": ALL segments in the set share
-           the SAME setIndex integer. Also put reps:N on every interval segment in the group.
-           setIndex values start at 1 and increment for each distinct complex set in the workout.
-
-           "4 x 800/400/200 at 10K/5K/3K with 400 easy/200 easy/400 easy recovery":
+        2. Complex "N x d1/d2/d3 with multiple recoveries": ALL segments share one setIndex; \
+        put reps:N on each interval segment
+           "4 x 800/400/200 at 10K/5K/3K with 400/200/400 easy":
            {"type":"interval","distanceMeters":800,"effort":"tenK","reps":4,"setIndex":1},
            {"type":"rest","distanceMeters":400,"effort":"easy","setIndex":1},
            {"type":"interval","distanceMeters":400,"effort":"fiveK","reps":4,"setIndex":1},
@@ -267,29 +212,171 @@ class ClaudeParserService {
            {"type":"interval","distanceMeters":200,"effort":"threeK","reps":4,"setIndex":1},
            {"type":"rest","distanceMeters":400,"effort":"easy","setIndex":1}
 
-        3. Never expand reps into separate segment pairs.
-        4. Open/unstructured recovery (e.g. "jog back", "run down") → rest segment with no distances/durations.
-        5. Each distinct complex set uses its own setIndex (e.g. first set = setIndex:1, second = setIndex:2).
+        3. Never expand reps into separate segment pairs
+        4. Open recovery ("jog back", "run down") → rest with no distance/duration
+        5. Multiple distinct complex sets → increment setIndex (setIndex:1, setIndex:2…)
 
-        EXAMPLE — "3 mi easy warm-up, 4 x 800/400/200 fast with 400 easy/200 easy/400 easy (10k/5k/3k effort), 4 x 200 fast/200 easy, 2 mi easy cooldown":
-        [
-          {"week":1,"dayOfWeek":"tuesday","title":"Track Workout","segments":[
-            {"type":"warmup","distanceMiles":3.0,"effort":"easy"},
-            {"type":"interval","distanceMeters":800,"effort":"tenK","reps":4,"setIndex":1},
-            {"type":"rest","distanceMeters":400,"effort":"easy","setIndex":1},
-            {"type":"interval","distanceMeters":400,"effort":"fiveK","reps":4,"setIndex":1},
-            {"type":"rest","distanceMeters":200,"effort":"easy","setIndex":1},
-            {"type":"interval","distanceMeters":200,"effort":"threeK","reps":4,"setIndex":1},
-            {"type":"rest","distanceMeters":400,"effort":"easy","setIndex":1},
-            {"type":"interval","distanceMeters":200,"effort":"threeK","reps":4},
-            {"type":"rest","distanceMeters":200,"effort":"easy"},
-            {"type":"cooldown","distanceMiles":2.0,"effort":"easy"}
-          ]}
-        ]
+        GRADUATED SETS ("5/4/3/2/1 miles at M effort with 1 mile float recovery"):
+        Each distance = separate interval, same setIndex:
+        {"type":"interval","distanceMiles":5,"effort":"marathon","setIndex":1},
+        {"type":"rest","distanceMiles":1,"effort":"easy","setIndex":1},
+        {"type":"interval","distanceMiles":4,"effort":"marathon","setIndex":1},
+        {"type":"rest","distanceMiles":1,"effort":"easy","setIndex":1}, … and so on
 
-        Training plan:
-        \(text)
+        Return ONLY the JSON array starting with [ and ending with ].
         """
+    }
+
+    private nonisolated func decodeSegments(from jsonString: String) throws -> [WorkoutSegment] {
+        let cleaned = extractJSONArray(from: jsonString)
+        guard let data = cleaned.data(using: .utf8) else {
+            throw parserError("Could not encode Phase 2 response", code: -2)
+        }
+        let dtos = try JSONDecoder().decode([WorkoutSegmentDTO].self, from: data)
+        return dtos.map { seg in
+            let segs = WorkoutSegment(
+                id: UUID(),
+                type: SegmentType(rawValue: seg.type) ?? .easy,
+                durationSeconds: (seg.durationSeconds ?? 0) > 0 ? seg.durationSeconds : nil,
+                distanceMiles: seg.distanceMeters == nil ? seg.distanceMiles : nil,
+                distanceMeters: seg.distanceMeters,
+                reps: seg.reps,
+                restDurationSeconds: seg.restDurationSeconds,
+                effort: seg.effort.flatMap { EffortLevel(rawValue: $0) },
+                setIndex: seg.setIndex
+            )
+            print("🏃 [ClaudeParser] Seg: \(seg.type) distM=\(seg.distanceMeters ?? -1) distMi=\(seg.distanceMiles ?? -1) dur=\(seg.durationSeconds ?? -1) reps=\(seg.reps ?? -1) effort=\(seg.effort ?? "-")")
+            return segs
+        }
+    }
+
+    // MARK: - Helpers
+
+    private nonisolated func makeWorkoutDay(from dto: DayStructureDTO, segments: [WorkoutSegment]) -> WorkoutDay {
+        WorkoutDay(
+            id: UUID(),
+            week: dto.week,
+            dayOfWeek: DayOfWeek(rawValue: dto.dayOfWeek.lowercased()) ?? .monday,
+            title: dto.title,
+            notes: dto.notes,
+            segments: segments,
+            isRaceDay: dto.isRaceDay ?? false
+        )
+    }
+
+    private func isRestDay(_ rawText: String) -> Bool {
+        let t = rawText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return t == "rest" || t.isEmpty
+    }
+
+    /// When multiple chunks produce the same (week, dayOfWeek), keep the one with more rawText.
+    private func deduplicateStructures(_ structures: [DayStructureDTO]) -> [DayStructureDTO] {
+        var best: [String: DayStructureDTO] = [:]
+        for s in structures {
+            let key = "\(s.week)-\(s.dayOfWeek.lowercased())"
+            if let existing = best[key] {
+                if s.rawText.count > existing.rawText.count { best[key] = s }
+            } else {
+                best[key] = s
+            }
+        }
+        return Array(best.values)
+    }
+
+    /// Strips markdown fences and extracts the outermost [...] from a Claude response.
+    private nonisolated func extractJSONArray(from response: String) -> String {
+        var s = response.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasPrefix("```") {
+            let lines = s.components(separatedBy: "\n")
+            s = lines.dropFirst().dropLast().joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if !s.hasPrefix("["),
+           let start = s.firstIndex(of: "["),
+           let end   = s.lastIndex(of: "]") {
+            s = String(s[start...end])
+        }
+        return s
+    }
+
+    private nonisolated func parserError(_ message: String, code: Int) -> NSError {
+        NSError(domain: "ClaudeParser", code: code,
+                userInfo: [NSLocalizedDescriptionKey: message])
+    }
+
+    // MARK: - Single Workout Detection
+
+    private func looksLikeSingleWorkout(_ text: String) -> Bool {
+        let hasWeek = text.range(of: #"(?i)\bweek\s*\d"#, options: .regularExpression) != nil
+        let hasDay  = text.range(
+            of: #"(?i)\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\b"#,
+            options: .regularExpression) != nil
+        let single = !hasWeek && !hasDay
+        if single { print("📦 [ClaudeParser] Single workout — wrapping as Week 1 Wednesday") }
+        return single
+    }
+
+    // MARK: - Page Merging
+
+    private func mergeOrphanedPageStarts(_ pages: [String]) -> [String] {
+        var merged: [String] = []
+        for page in pages {
+            let startsNewWeek = page.range(
+                of: #"(?i)^week\s+\d"#, options: .regularExpression) != nil
+            if !startsNewWeek && !merged.isEmpty {
+                merged[merged.count - 1] += "\n\n" + page
+                print("📦 [ClaudeParser] Merged orphaned page into previous chunk")
+            } else {
+                merged.append(page)
+            }
+        }
+        return merged
+    }
+
+    // MARK: - Chunking
+
+    private func splitIntoWeeks(_ text: String) -> [String] {
+        let pageBreak = "\n\n=== PAGE BREAK ===\n\n"
+        if text.contains(pageBreak) {
+            let rawPages = text.components(separatedBy: pageBreak)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if rawPages.count > 1 {
+                let chunks = mergeOrphanedPageStarts(rawPages)
+                print("📦 [ClaudeParser] Page split: \(rawPages.count) pages → \(chunks.count) chunks")
+                return chunks
+            }
+        }
+        guard let regex = try? NSRegularExpression(
+            pattern: #"(?m)^week\s+\d+"#, options: .caseInsensitive
+        ) else { return [text] }
+        let ns = text as NSString
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        guard matches.count > 1 else { return [text] }
+        return matches.enumerated().map { i, m in
+            let start = m.range.location
+            let end = i + 1 < matches.count ? matches[i + 1].range.location : ns.length
+            return ns.substring(with: NSRange(location: start, length: end - start))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    // MARK: - Cache-aware Claude Call
+
+    private func callClaudeWithCache(
+        _ text: String,
+        prefix: String,
+        prompt: (String) -> String
+    ) async throws -> String {
+        let cacheKey = "\(prefix):\(text)"
+        if let cached = PlanParseCache.shared.cachedJSON(for: cacheKey) {
+            print("✅ [ClaudeParser] Cache hit (\(prefix))")
+            return cached
+        }
+        print("🌐 [ClaudeParser] Cache miss (\(prefix)) — calling Claude")
+        let json = try await callClaude(with: prompt(text))
+        PlanParseCache.shared.store(json: json, for: cacheKey)
+        return json
     }
 
     // MARK: - API Call
@@ -298,31 +385,27 @@ class ClaudeParserService {
         var request = URLRequest(url: apiURL)
         request.httpMethod = "POST"
         request.timeoutInterval = 300
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json",   forHTTPHeaderField: "Content-Type")
         request.setValue(Secrets.anthropicAPIKey, forHTTPHeaderField: "x-api-key")
-        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.setValue("2023-06-01",         forHTTPHeaderField: "anthropic-version")
 
         let body: [String: Any] = [
             "model": "claude-sonnet-4-6",
-            "max_tokens": 16000,
+            "max_tokens": 8000,
             "messages": [["role": "user", "content": prompt]]
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        var lastError: Error = NSError(domain: "ClaudeParser", code: -1,
-                                       userInfo: [NSLocalizedDescriptionKey: "Unknown error"])
+        var lastError: Error = parserError("Unknown error", code: -1)
         for attempt in 1...5 {
             let (data, urlResponse) = try await URLSession.shared.data(for: request)
-
             if let http = urlResponse as? HTTPURLResponse, http.statusCode != 200 {
-                let isOverloaded = http.statusCode == 529 || http.statusCode == 503
                 if let errBody = try? JSONDecoder().decode(ClaudeErrorResponse.self, from: data) {
-                    lastError = NSError(domain: "ClaudeParser", code: http.statusCode,
-                                        userInfo: [NSLocalizedDescriptionKey: errBody.error.message])
+                    lastError = parserError(errBody.error.message, code: http.statusCode)
                 } else {
-                    lastError = NSError(domain: "ClaudeParser", code: http.statusCode,
-                                        userInfo: [NSLocalizedDescriptionKey: "API error (HTTP \(http.statusCode))"])
+                    lastError = parserError("API error (HTTP \(http.statusCode))", code: http.statusCode)
                 }
+                let isOverloaded = http.statusCode == 529 || http.statusCode == 503
                 if isOverloaded && attempt < 5 {
                     let delay = UInt64(pow(2.0, Double(attempt))) * 1_000_000_000
                     try await Task.sleep(nanoseconds: delay)
@@ -330,117 +413,57 @@ class ClaudeParserService {
                 }
                 throw lastError
             }
-
             let response = try JSONDecoder().decode(ClaudeResponse.self, from: data)
             guard let text = response.content.first(where: { $0.type == "text" })?.text else {
-                throw NSError(domain: "ClaudeParser", code: -1,
-                              userInfo: [NSLocalizedDescriptionKey: "Empty response from Claude"])
+                throw parserError("Empty response from Claude", code: -1)
             }
             return text
         }
         throw lastError
     }
 
-    // MARK: - Decode
-
-    private nonisolated func decodeDays(from jsonString: String) throws -> [WorkoutDay] {
-        print("🏃 [ClaudeParser] Raw JSON:\n\(jsonString)")
-        var cleaned = jsonString.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Strip markdown code fences (``` or ```json ... ```)
-        if cleaned.hasPrefix("```") {
-            let lines = cleaned.components(separatedBy: "\n")
-            cleaned = lines.dropFirst().dropLast().joined(separator: "\n")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-
-        // If the response has surrounding prose or an object wrapper, extract the
-        // outermost JSON array by finding the first '[' and last ']'.
-        if !cleaned.hasPrefix("[") {
-            if let start = cleaned.firstIndex(of: "["),
-               let end = cleaned.lastIndex(of: "]") {
-                cleaned = String(cleaned[start...end])
-            }
-        }
-
-        guard let data = cleaned.data(using: .utf8) else {
-            throw NSError(domain: "ClaudeParser", code: -2,
-                          userInfo: [NSLocalizedDescriptionKey: "Could not encode response"])
-        }
-
-        let dtos: [WorkoutDayDTO]
-        do {
-            dtos = try JSONDecoder().decode([WorkoutDayDTO].self, from: data)
-        } catch {
-            let preview = String(cleaned.prefix(300))
-            print("🏃 [ClaudeParser] Decode error: \(error)\nResponse preview: \(preview)")
-            throw NSError(domain: "ClaudeParser", code: -3, userInfo: [
-                NSLocalizedDescriptionKey: "Could not parse the training plan. Please try again or paste the plan as text."
-            ])
-        }
-
-        return dtos.map { dto in
-            let segments = dto.segments.map { seg in
-                WorkoutSegment(
-                    id: UUID(),
-                    type: SegmentType(rawValue: seg.type) ?? .easy,
-                    durationSeconds: (seg.durationSeconds ?? 0) > 0 ? seg.durationSeconds : nil,
-                    distanceMiles: seg.distanceMeters == nil ? seg.distanceMiles : nil,
-                    distanceMeters: seg.distanceMeters,
-                    reps: seg.reps,
-                    restDurationSeconds: seg.restDurationSeconds,
-                    effort: seg.effort.flatMap { EffortLevel(rawValue: $0) },
-                    setIndex: seg.setIndex
-                )
-            }
-            for seg in segments {
-                print("🏃 [ClaudeParser] Segment: \(seg.type.rawValue) distMeters=\(seg.distanceMeters ?? -1) distMiles=\(seg.distanceMiles ?? -1) durSec=\(seg.durationSeconds ?? -1) reps=\(seg.reps ?? -1) setIndex=\(seg.setIndex ?? -1)")
-            }
-            return WorkoutDay(
-                id: UUID(),
-                week: dto.week,
-                dayOfWeek: DayOfWeek(rawValue: dto.dayOfWeek.lowercased()) ?? .monday,
-                title: dto.title,
-                notes: dto.notes,
-                segments: segments,
-                isRaceDay: dto.isRaceDay ?? false
-            )
-        }
-    }
+    // MARK: - Assembly
 
     private func assemblePlan(from days: [WorkoutDay], title: String) -> TrainingPlan {
-        // Deduplicate: when two chunks both produce a day for the same (week, dayOfWeek),
-        // keep the most detailed one (most segments; break ties with notes presence).
+        // Safety dedup — should be a no-op after deduplicateStructures, but kept as guard
         var best: [String: WorkoutDay] = [:]
         for day in days {
             let key = "\(day.week)-\(day.dayOfWeek.rawValue)"
             if let existing = best[key] {
-                let newScore = day.segments.count * 10 + (day.notes != nil ? 1 : 0)
-                let oldScore = existing.segments.count * 10 + (existing.notes != nil ? 1 : 0)
-                if newScore > oldScore { best[key] = day }
+                let score    = day.segments.count * 10 + (day.notes != nil ? 1 : 0)
+                let exScore  = existing.segments.count * 10 + (existing.notes != nil ? 1 : 0)
+                if score > exScore { best[key] = day }
             } else {
                 best[key] = day
             }
         }
-        let uniqueDays = Array(best.values)
-
-        let grouped = Dictionary(grouping: uniqueDays) { $0.week }
-        let sortedWeeks = grouped.keys.sorted().map { week in
+        let unique = Array(best.values)
+        let grouped = Dictionary(grouping: unique) { $0.week }
+        let sortedWeeks = grouped.keys.sorted().map { week -> [WorkoutDay] in
             let order = DayOfWeek.allCases
             return (grouped[week] ?? []).sorted {
                 (order.firstIndex(of: $0.dayOfWeek) ?? 0) < (order.firstIndex(of: $1.dayOfWeek) ?? 0)
             }
         }
-        print("🗓️ [ClaudeParser] Assembled plan '\(title)': \(sortedWeeks.count) week(s), \(uniqueDays.count) day(s) (deduped from \(days.count))")
+        print("🗓️ [ClaudeParser] '\(title)': \(sortedWeeks.count) week(s), \(unique.count) day(s)")
         for (i, week) in sortedWeeks.enumerated() {
-            let summary = week.map { "\($0.dayOfWeek.rawValue): \($0.title)" }.joined(separator: ", ")
-            print("  Week \(i + 1): \(summary)")
+            let s = week.map { "\($0.dayOfWeek.rawValue): \($0.title)" }.joined(separator: ", ")
+            print("  Week \(i + 1): \(s)")
         }
         return TrainingPlan(id: UUID(), title: title, weeks: sortedWeeks)
     }
 }
 
 // MARK: - DTOs
+
+private struct DayStructureDTO: Decodable {
+    let week: Int
+    let dayOfWeek: String
+    let title: String
+    let notes: String?
+    let isRaceDay: Bool?
+    let rawText: String
+}
 
 private struct ClaudeResponse: Decodable {
     let content: [ContentBlock]
@@ -458,15 +481,6 @@ private struct ClaudeErrorResponse: Decodable {
     }
 }
 
-private struct WorkoutDayDTO: Decodable {
-    let week: Int
-    let dayOfWeek: String
-    let title: String
-    let notes: String?
-    let isRaceDay: Bool?
-    let segments: [WorkoutSegmentDTO]
-}
-
 private struct WorkoutSegmentDTO: Decodable {
     let type: String
     let durationSeconds: Int?
@@ -475,11 +489,5 @@ private struct WorkoutSegmentDTO: Decodable {
     let reps: Int?
     let restDurationSeconds: Int?
     let effort: String?
-    let setIndex: Int?           // non-nil when segment belongs to a multi-step group
-
-    /// Resolved distance in miles — prefers distanceMeters (converted) over distanceMiles.
-    var resolvedDistanceMiles: Double? {
-        if let m = distanceMeters { return m / 1609.344 }
-        return distanceMiles
-    }
+    let setIndex: Int?
 }

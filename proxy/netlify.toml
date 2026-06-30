@@ -1,0 +1,7 @@
+[build]
+  functions = "netlify/functions"
+  # No site build step — this is a functions-only deploy.
+  publish = "public"
+
+[functions]
+  node_bundler = "esbuild"

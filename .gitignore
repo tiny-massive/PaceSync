@@ -20,3 +20,6 @@ Packages/
 
 # Secrets — NEVER commit this file
 PaceSync/Services/Secrets.swift
+
+# Local Netlify folder
+.netlify

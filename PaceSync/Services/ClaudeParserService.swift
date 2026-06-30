@@ -11,7 +11,13 @@ import Foundation
 
 class ClaudeParserService {
 
-    private let apiURL = URL(string: "https://api.anthropic.com/v1/messages")!
+    // Requests go to the PaceSync proxy, which attaches the real Anthropic key
+    // server-side. The app never contains the Anthropic key.
+    private let apiURL = URL(string: Secrets.proxyURL)!
+
+    /// Max Claude calls in flight at once. Bounds bursts so individual calls stay fast
+    /// and well under the serverless proxy's ~30s timeout (and avoids self-inflicted rate limits).
+    private let maxConcurrentCalls = 4
 
     // MARK: - Public Entry Point
 
@@ -30,18 +36,20 @@ class ClaudeParserService {
 
         progressCallback?(0.0, "Extracting schedule…")
 
-        // ── Phase 1: extract day structures from all chunks concurrently ──────────
-        let rawStructures: [DayStructureDTO] = try await withThrowingTaskGroup(
-            of: [DayStructureDTO].self
-        ) { group in
-            for chunk in chunks {
-                group.addTask { [self] in
-                    try await self.extractDayStructures(from: chunk)
+        // ── Phase 1: extract day structures, ~one week per call, bounded concurrency ──
+        var rawStructures: [DayStructureDTO] = []
+        for batch in chunks.chunked(into: maxConcurrentCalls) {
+            let batchResults = try await withThrowingTaskGroup(
+                of: [DayStructureDTO].self
+            ) { group in
+                for chunk in batch {
+                    group.addTask { [self] in try await self.extractDayStructures(from: chunk) }
                 }
+                var all: [[DayStructureDTO]] = []
+                for try await b in group { all.append(b) }
+                return all.flatMap { $0 }
             }
-            var all: [[DayStructureDTO]] = []
-            for try await batch in group { all.append(batch) }
-            return all.flatMap { $0 }
+            rawStructures.append(contentsOf: batchResults)
         }
 
         let structures = deduplicateStructures(rawStructures)
@@ -56,26 +64,28 @@ class ClaudeParserService {
         let workoutStructures = structures.filter { !isRestDay($0.rawText) }
         let total = workoutStructures.count
 
-        let parsedWorkoutDays: [WorkoutDay] = try await withThrowingTaskGroup(
-            of: WorkoutDay.self
-        ) { group in
-            for dto in workoutStructures {
-                group.addTask { [self] in
-                    let segs = try await self.parseSegments(from: dto.rawText)
-                    return self.makeWorkoutDay(from: dto, segments: segs)
+        var parsedWorkoutDays: [WorkoutDay] = []
+        var done = 0
+        for batch in workoutStructures.chunked(into: maxConcurrentCalls) {
+            let batchDays = try await withThrowingTaskGroup(
+                of: WorkoutDay.self
+            ) { group in
+                for dto in batch {
+                    group.addTask { [self] in
+                        let segs = try await self.parseSegments(from: dto.rawText)
+                        return self.makeWorkoutDay(from: dto, segments: segs)
+                    }
                 }
+                var days: [WorkoutDay] = []
+                for try await day in group { days.append(day) }
+                return days
             }
-            var days: [WorkoutDay] = []
-            var done = 0
-            for try await day in group {
-                days.append(day)
-                done += 1
-                progressCallback?(
-                    0.25 + 0.75 * Double(done) / Double(max(total, 1)),
-                    "Parsed \(done) of \(total) workouts…"
-                )
-            }
-            return days
+            parsedWorkoutDays.append(contentsOf: batchDays)
+            done += batchDays.count
+            progressCallback?(
+                0.25 + 0.75 * Double(done) / Double(max(total, 1)),
+                "Parsed \(done) of \(total) workouts…"
+            )
         }
 
         progressCallback?(1.0, "Done!")
@@ -85,7 +95,7 @@ class ClaudeParserService {
     // MARK: - Phase 1: Structure Extraction
 
     private func extractDayStructures(from chunk: String) async throws -> [DayStructureDTO] {
-        let json = try await callClaudeWithCache(chunk, prefix: "p1", prompt: buildPhase1Prompt)
+        let json = try await callClaudeWithCache(chunk, prefix: "p1", maxTokens: 4000, prompt: buildPhase1Prompt)
         return try decodeDayStructures(from: json)
     }
 
@@ -146,7 +156,7 @@ class ClaudeParserService {
 
     private func parseSegments(from rawText: String) async throws -> [WorkoutSegment] {
         guard !isRestDay(rawText) else { return [] }
-        let json = try await callClaudeWithCache(rawText, prefix: "p2", prompt: buildPhase2Prompt)
+        let json = try await callClaudeWithCache(rawText, prefix: "p2", maxTokens: 1500, prompt: buildPhase2Prompt)
         return (try? decodeSegments(from: json)) ?? []
     }
 
@@ -336,23 +346,18 @@ class ClaudeParserService {
     // MARK: - Chunking
 
     private func splitIntoWeeks(_ text: String) -> [String] {
-        let pageBreak = "\n\n=== PAGE BREAK ===\n\n"
-        if text.contains(pageBreak) {
-            let rawPages = text.components(separatedBy: pageBreak)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-            if rawPages.count > 1 {
-                let chunks = mergeOrphanedPageStarts(rawPages)
-                print("📦 [ClaudeParser] Page split: \(rawPages.count) pages → \(chunks.count) chunks")
-                return chunks
-            }
-        }
+        // Chunk by WEEK so each Claude call covers at most one week — keeping every call
+        // small and well under the serverless proxy's ~30s timeout. Legacy page-break
+        // sentinels are normalised away first; a week that was split across pages gets
+        // reunited because we split on week markers, not page boundaries. The leading
+        // [#>\-\*\s]* allows markdown headings/bullets (e.g. "## Week 1", "- Week 1").
+        let normalized = text.replacingOccurrences(of: "=== PAGE BREAK ===", with: "\n")
         guard let regex = try? NSRegularExpression(
-            pattern: #"(?m)^week\s+\d+"#, options: .caseInsensitive
-        ) else { return [text] }
-        let ns = text as NSString
-        let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
-        guard matches.count > 1 else { return [text] }
+            pattern: #"(?im)^[#>\-\*\s]*week\s+\d+"#
+        ) else { return [normalized] }
+        let ns = normalized as NSString
+        let matches = regex.matches(in: normalized, range: NSRange(location: 0, length: ns.length))
+        guard matches.count > 1 else { return [normalized] }
         return matches.enumerated().map { i, m in
             let start = m.range.location
             let end = i + 1 < matches.count ? matches[i + 1].range.location : ns.length
@@ -366,6 +371,7 @@ class ClaudeParserService {
     private func callClaudeWithCache(
         _ text: String,
         prefix: String,
+        maxTokens: Int,
         prompt: (String) -> String
     ) async throws -> String {
         let cacheKey = "\(prefix):\(text)"
@@ -374,45 +380,69 @@ class ClaudeParserService {
             return cached
         }
         print("🌐 [ClaudeParser] Cache miss (\(prefix)) — calling Claude")
-        let json = try await callClaude(with: prompt(text))
+        let json = try await callClaude(with: prompt(text), maxTokens: maxTokens)
         PlanParseCache.shared.store(json: json, for: cacheKey)
         return json
     }
 
     // MARK: - API Call
 
-    private func callClaude(with prompt: String) async throws -> String {
+    private func callClaude(with prompt: String, maxTokens: Int) async throws -> String {
         var request = URLRequest(url: apiURL)
         request.httpMethod = "POST"
         request.timeoutInterval = 300
-        request.setValue("application/json",   forHTTPHeaderField: "Content-Type")
-        request.setValue(Secrets.anthropicAPIKey, forHTTPHeaderField: "x-api-key")
-        request.setValue("2023-06-01",         forHTTPHeaderField: "anthropic-version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // The proxy validates this token, then attaches the Anthropic key +
+        // anthropic-version header itself before forwarding to Anthropic.
+        request.setValue(Secrets.appToken, forHTTPHeaderField: "x-app-token")
 
         let body: [String: Any] = [
             "model": "claude-sonnet-4-6",
-            "max_tokens": 8000,
+            "max_tokens": maxTokens,
             "messages": [["role": "user", "content": prompt]]
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
+        // Retry transient failures — transport errors (dropped connection / timeout on
+        // cellular) AND gateway/rate-limit/overload statuses. 504 is the serverless proxy
+        // timeout; 429 is rate limiting (honour Retry-After when present).
+        let retryableStatuses: Set<Int> = [408, 429, 500, 502, 503, 504, 529]
+        let maxAttempts = 5
         var lastError: Error = parserError("Unknown error", code: -1)
-        for attempt in 1...5 {
-            let (data, urlResponse) = try await URLSession.shared.data(for: request)
-            if let http = urlResponse as? HTTPURLResponse, http.statusCode != 200 {
+
+        for attempt in 1...maxAttempts {
+            let data: Data
+            let urlResponse: URLResponse
+            do {
+                (data, urlResponse) = try await URLSession.shared.data(for: request)
+            } catch {
+                lastError = error
+                if attempt < maxAttempts {
+                    try await Task.sleep(nanoseconds: backoffNanos(attempt))
+                    continue
+                }
+                throw error
+            }
+
+            guard let http = urlResponse as? HTTPURLResponse else {
+                throw parserError("Invalid response from server", code: -1)
+            }
+
+            if http.statusCode != 200 {
                 if let errBody = try? JSONDecoder().decode(ClaudeErrorResponse.self, from: data) {
                     lastError = parserError(errBody.error.message, code: http.statusCode)
                 } else {
                     lastError = parserError("API error (HTTP \(http.statusCode))", code: http.statusCode)
                 }
-                let isOverloaded = http.statusCode == 529 || http.statusCode == 503
-                if isOverloaded && attempt < 5 {
-                    let delay = UInt64(pow(2.0, Double(attempt))) * 1_000_000_000
+                if retryableStatuses.contains(http.statusCode), attempt < maxAttempts {
+                    let retryAfter = http.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init)
+                    let delay = retryAfter.map { UInt64($0 * 1_000_000_000) } ?? backoffNanos(attempt)
                     try await Task.sleep(nanoseconds: delay)
                     continue
                 }
                 throw lastError
             }
+
             let response = try JSONDecoder().decode(ClaudeResponse.self, from: data)
             guard let text = response.content.first(where: { $0.type == "text" })?.text else {
                 throw parserError("Empty response from Claude", code: -1)
@@ -420,6 +450,11 @@ class ClaudeParserService {
             return text
         }
         throw lastError
+    }
+
+    /// Exponential backoff (2^attempt seconds) in nanoseconds.
+    private func backoffNanos(_ attempt: Int) -> UInt64 {
+        UInt64(pow(2.0, Double(attempt))) * 1_000_000_000
     }
 
     // MARK: - Assembly
@@ -490,4 +525,15 @@ private struct WorkoutSegmentDTO: Decodable {
     let restDurationSeconds: Int?
     let effort: String?
     let setIndex: Int?
+}
+
+private extension Array {
+    /// Splits into consecutive sub-arrays of at most `size` elements (used to bound
+    /// how many Claude calls run concurrently).
+    func chunked(into size: Int) -> [[Element]] {
+        guard size > 0 else { return [self] }
+        return stride(from: 0, to: count, by: size).map {
+            Array(self[$0 ..< Swift.min($0 + size, count)])
+        }
+    }
 }

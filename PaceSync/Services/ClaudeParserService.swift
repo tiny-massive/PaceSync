@@ -9,6 +9,7 @@
 
 import CryptoKit
 import Foundation
+import PDFKit
 
 class ClaudeParserService {
 
@@ -392,14 +393,14 @@ class ClaudeParserService {
             return cached
         }
         print("🌐 [ClaudeParser] Cache miss (\(prefix)) — calling Claude")
-        let json = try await callClaude(with: prompt(text), maxTokens: maxTokens)
+        let json = try await callClaude(content: prompt(text), maxTokens: maxTokens)
         PlanParseCache.shared.store(json: json, for: cacheKey)
         return json
     }
 
     // MARK: - API Call
 
-    private func callClaude(with prompt: String, maxTokens: Int) async throws -> String {
+    private func callClaude(content: Any, maxTokens: Int) async throws -> String {
         var request = URLRequest(url: apiURL)
         request.httpMethod = "POST"
         request.timeoutInterval = 300
@@ -411,7 +412,7 @@ class ClaudeParserService {
         let body: [String: Any] = [
             "model": "claude-sonnet-4-6",
             "max_tokens": maxTokens,
-            "messages": [["role": "user", "content": prompt]]
+            "messages": [["role": "user", "content": content]]
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
@@ -467,6 +468,90 @@ class ClaudeParserService {
     /// Exponential backoff (2^attempt seconds) in nanoseconds.
     private func backoffNanos(_ attempt: Int) -> UInt64 {
         UInt64(pow(2.0, Double(attempt))) * 1_000_000_000
+    }
+
+    // MARK: - PDF → Markdown transcription (Stage A)
+
+    /// Transcribes a PDF training plan into clean Markdown by sending the *rendered* PDF
+    /// to Claude (native document input), a small page-batch at a time so each call stays
+    /// under the proxy's ~30s ceiling. Batch Markdown is concatenated in page order.
+    func transcribePDFToMarkdown(
+        _ pdfData: Data,
+        progressCallback: ((Double, String) -> Void)? = nil
+    ) async throws -> String {
+        // One page per call: Sonnet transcribes a dense page faithfully in ~27s, and
+        // keeping it to a single page preserves column alignment (Haiku and multi-page
+        // calls scramble the table). The proxy must allow >30s — see proxy/cloudflare.
+        let batches = pdfPageBatches(pdfData, pagesPerBatch: 1)
+        guard !batches.isEmpty else {
+            throw parserError("Couldn't read the PDF. Try a different file.", code: -10)
+        }
+        progressCallback?(0.0, "Reading your plan…")
+
+        let total = batches.count
+        var byIndex: [Int: String] = [:]
+        var done = 0
+        for group in Array(batches.enumerated()).chunked(into: maxConcurrentCalls) {
+            let results = try await withThrowingTaskGroup(of: (Int, String).self) { tg in
+                for (i, batch) in group {
+                    tg.addTask { [self] in (i, try await self.transcribeBatch(batch)) }
+                }
+                var out: [(Int, String)] = []
+                for try await r in tg { out.append(r) }
+                return out
+            }
+            for (i, md) in results { byIndex[i] = md }
+            done += results.count
+            progressCallback?(Double(done) / Double(total), "Reading your plan…")
+        }
+        return (0 ..< total).compactMap { byIndex[$0] }.joined(separator: "\n\n")
+    }
+
+    private func transcribeBatch(_ pdfBase64: String) async throws -> String {
+        let content: [[String: Any]] = [
+            ["type": "document",
+             "source": ["type": "base64", "media_type": "application/pdf", "data": pdfBase64]],
+            ["type": "text", "text": transcriptionPrompt]
+        ]
+        return try await callClaude(content: content, maxTokens: 4096)
+    }
+
+    private var transcriptionPrompt: String {
+        """
+        Transcribe this running training plan into clean Markdown. The plan is a table: \
+        columns are days (Monday–Sunday), rows are weeks.
+
+        Rules:
+        - One heading per week: "## Week N".
+        - Under each week, one bullet per day IN ORDER: "- **Monday** — <full text>", \
+        through Sunday.
+        - Copy each cell's workout text VERBATIM. Do not summarise, interpret, or add anything.
+        - If a week's row is split across pages, still keep its days together.
+        - Output ONLY the Markdown — no preamble, no commentary, no code fences.
+        """
+    }
+
+    /// Splits a PDF into base64-encoded sub-PDFs of at most `pagesPerBatch` pages each,
+    /// so each transcription call is small and fast.
+    private func pdfPageBatches(_ data: Data, pagesPerBatch: Int) -> [String] {
+        guard let doc = PDFDocument(data: data), doc.pageCount > 0 else { return [] }
+        var batches: [String] = []
+        var start = 0
+        while start < doc.pageCount {
+            let end = min(start + pagesPerBatch, doc.pageCount)
+            let sub = PDFDocument()
+            var insertIndex = 0
+            for p in start ..< end {
+                guard let page = doc.page(at: p)?.copy() as? PDFPage else { continue }
+                sub.insert(page, at: insertIndex)
+                insertIndex += 1
+            }
+            if let subData = sub.dataRepresentation() {
+                batches.append(subData.base64EncodedString())
+            }
+            start = end
+        }
+        return batches
     }
 
     // MARK: - Assembly

@@ -44,15 +44,26 @@ class AppState: ObservableObject {
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
 
         do {
-            let importer = try makeImporter(for: url)
-            let text     = try importer.extractText(from: url)
+            let title = url.deletingPathExtension().lastPathComponent
+            let text: String
+            if url.pathExtension.lowercased() == "pdf" {
+                // Stage A: transcribe the real PDF to clean Markdown (Claude reads the
+                // rendered layout, so table columns don't scramble), then parse the Markdown.
+                let pdfData = try Data(contentsOf: url)
+                advanceProgress(to: 0.10, phase: "Reading your plan…")
+                text = try await parser.transcribePDFToMarkdown(pdfData) { [weak self] p, phase in
+                    self?.advanceProgress(to: 0.10 + p * 0.25, phase: phase)
+                }
+            } else {
+                let importer = try makeImporter(for: url)
+                text = try importer.extractText(from: url)
+            }
             guard text.count > 30 else {
                 throw ImportError.emptyContent
             }
-            let title = url.deletingPathExtension().lastPathComponent
-            advanceProgress(to: 0.25, phase: "Sending to Claude…")
+            advanceProgress(to: 0.35, phase: "Parsing workouts…")
             let plan = try await parser.parseTrainingPlan(from: text, title: title) { [weak self] progress, phase in
-                self?.advanceProgress(to: 0.25 + progress * 0.70, phase: phase)
+                self?.advanceProgress(to: 0.35 + progress * 0.60, phase: phase)
             }
             completeProgress()
             try? await Task.sleep(nanoseconds: 350_000_000)

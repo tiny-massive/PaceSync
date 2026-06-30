@@ -12,6 +12,8 @@ struct SavedPlan: Codable, Identifiable {
     var sourceFileName: String?
     /// Raw source text cached in-memory (and persisted) so re-parse works even if the source file is missing.
     var cachedSourceText: String?
+    /// Persisted schema version for safe migrations. nil = legacy (pre-versioning).
+    var schemaVersion: Int? = 2
 
     // MARK: - Race-date derived properties
 

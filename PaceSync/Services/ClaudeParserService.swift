@@ -7,6 +7,7 @@
 // which dramatically improves accuracy for complex workouts.
 // Both phases are cached independently — re-uploads only re-parse days whose text changed.
 
+import CryptoKit
 import Foundation
 
 class ClaudeParserService {
@@ -263,15 +264,26 @@ class ClaudeParserService {
     // MARK: - Helpers
 
     private nonisolated func makeWorkoutDay(from dto: DayStructureDTO, segments: [WorkoutSegment]) -> WorkoutDay {
-        WorkoutDay(
-            id: UUID(),
+        let day = DayOfWeek(rawValue: dto.dayOfWeek.lowercased()) ?? .monday
+        return WorkoutDay(
+            id: Self.stableDayID(week: dto.week, dayOfWeek: day),
             week: dto.week,
-            dayOfWeek: DayOfWeek(rawValue: dto.dayOfWeek.lowercased()) ?? .monday,
+            dayOfWeek: day,
             title: dto.title,
             notes: dto.notes,
             segments: segments,
             isRaceDay: dto.isRaceDay ?? false
         )
+    }
+
+    /// Deterministic id for a (week, day) so the same day keeps its identity across
+    /// re-parses — lets scheduling and calendar sync update events in place instead of
+    /// duplicating, and stops re-parse from orphaning already-scheduled workouts.
+    nonisolated static func stableDayID(week: Int, dayOfWeek: DayOfWeek) -> UUID {
+        let seed = "paceday-v1-\(week)-\(dayOfWeek.rawValue)"
+        let b = Array(SHA256.hash(data: Data(seed.utf8)))
+        return UUID(uuid: (b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
+                           b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]))
     }
 
     private func isRestDay(_ rawText: String) -> Bool {

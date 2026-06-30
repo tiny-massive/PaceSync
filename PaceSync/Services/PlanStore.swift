@@ -126,8 +126,13 @@ class PlanStore: ObservableObject {
     }
 
     private func load() {
-        guard let data  = try? Data(contentsOf: storeURL),
-              let saved = try? JSONDecoder().decode(SavedPlan.self, from: data) else { return }
-        current = saved
+        guard let data = try? Data(contentsOf: storeURL) else { return }
+        do {
+            current = try JSONDecoder().decode(SavedPlan.self, from: data)
+        } catch {
+            // Don't silently lose the user's only plan on a decode failure — keep the
+            // file on disk so a future migration can recover it, and surface the error.
+            print("⚠️ [PlanStore] Could not decode saved plan: \(error)")
+        }
     }
 }

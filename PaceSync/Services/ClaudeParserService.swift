@@ -479,32 +479,18 @@ class ClaudeParserService {
         _ pdfData: Data,
         progressCallback: ((Double, String) -> Void)? = nil
     ) async throws -> String {
-        // One page per call: Sonnet transcribes a dense page faithfully in ~27s, and
-        // keeping it to a single page preserves column alignment (Haiku and multi-page
-        // calls scramble the table). The proxy must allow >30s — see proxy/cloudflare.
-        let batches = pdfPageBatches(pdfData, pagesPerBatch: 1)
-        guard !batches.isEmpty else {
+        // Send the WHOLE PDF in one call. The Cloudflare Worker proxy has no wall-clock
+        // ceiling, and transcribing the whole document keeps weeks that span a page break
+        // together — a per-page call can't see a week's header from its continuation page
+        // (e.g. a week whose row starts on page 3 and finishes on page 4). Sonnet reads the
+        // rendered table, so columns don't scramble. Verified: full 12-week plan in ~81s.
+        guard (PDFDocument(data: pdfData)?.pageCount ?? 0) > 0 else {
             throw parserError("Couldn't read the PDF. Try a different file.", code: -10)
         }
-        progressCallback?(0.0, "Reading your plan…")
-
-        let total = batches.count
-        var byIndex: [Int: String] = [:]
-        var done = 0
-        for group in Array(batches.enumerated()).chunked(into: maxConcurrentCalls) {
-            let results = try await withThrowingTaskGroup(of: (Int, String).self) { tg in
-                for (i, batch) in group {
-                    tg.addTask { [self] in (i, try await self.transcribeBatch(batch)) }
-                }
-                var out: [(Int, String)] = []
-                for try await r in tg { out.append(r) }
-                return out
-            }
-            for (i, md) in results { byIndex[i] = md }
-            done += results.count
-            progressCallback?(Double(done) / Double(total), "Reading your plan…")
-        }
-        return (0 ..< total).compactMap { byIndex[$0] }.joined(separator: "\n\n")
+        progressCallback?(0.1, "Reading your plan…")
+        let markdown = try await transcribeBatch(pdfData.base64EncodedString())
+        progressCallback?(1.0, "Reading your plan…")
+        return markdown
     }
 
     private func transcribeBatch(_ pdfBase64: String) async throws -> String {
@@ -513,7 +499,8 @@ class ClaudeParserService {
              "source": ["type": "base64", "media_type": "application/pdf", "data": pdfBase64]],
             ["type": "text", "text": transcriptionPrompt]
         ]
-        return try await callClaude(content: content, maxTokens: 4096)
+        // Whole-plan transcription needs headroom (a full 12-week plan is ~4k tokens).
+        return try await callClaude(content: content, maxTokens: 8000)
     }
 
     private var transcriptionPrompt: String {

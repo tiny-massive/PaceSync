@@ -13,6 +13,8 @@ struct HomeView: View {
     @FocusState private var inputFocused: Bool
     @State private var inputText       = ""
     @State private var showFilePicker  = false
+    @State private var pendingImport: PendingImport?
+    @State private var pickedFileURL: URL?
     @State private var showRaceDateSheet = false
     @State private var showRenameAlert = false
     @State private var showSettings    = false
@@ -82,10 +84,15 @@ struct HomeView: View {
                     navigateToPlan = true
                 }
             }
-            .sheet(isPresented: $showFilePicker) {
-                DocumentPicker { url in
-                    Task { await appState.importFile(from: url) }
-                }
+            .sheet(isPresented: $showFilePicker, onDismiss: {
+                // Present the race-day sheet only after the file picker has fully dismissed.
+                if let u = pickedFileURL { pickedFileURL = nil; pendingImport = .file(u) }
+            }) {
+                DocumentPicker { url in pickedFileURL = url }
+            }
+            .sheet(item: $pendingImport) { pending in
+                // Capture the race day BEFORE parsing so dates are computed up front.
+                StartPlanSheet { date in start(pending, raceDate: date) }
             }
             .sheet(isPresented: $showRaceDateSheet) {
                 RaceDateSheet().environmentObject(appState)
@@ -98,6 +105,18 @@ struct HomeView: View {
                 Button("Save") { appState.planStore.rename(renameText) }
                 Button("Cancel", role: .cancel) {}
             }
+        }
+    }
+
+    // MARK: - Start import (after race day is confirmed)
+
+    private func start(_ pending: PendingImport, raceDate: Date) {
+        switch pending {
+        case .text(let t):
+            inputText = ""
+            Task { await appState.importText(t, raceDate: raceDate) }
+        case .file(let u):
+            Task { await appState.importFile(from: u, raceDate: raceDate) }
         }
     }
 
@@ -258,9 +277,9 @@ struct HomeView: View {
                 Button {
                     let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !text.isEmpty else { return }
-                    inputText = ""
                     inputFocused = false
-                    Task { await appState.importText(text) }
+                    // Ask for the race day first; the actual import runs in start(...).
+                    pendingImport = .text(text)
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: 30))
@@ -390,6 +409,76 @@ struct PlanCardView: View {
             Text(value)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - PendingImport + StartPlanSheet
+
+/// A queued import waiting for the user to confirm their race day before parsing.
+enum PendingImport: Identifiable {
+    case text(String)
+    case file(URL)
+    var id: String {
+        switch self {
+        case .text(let t): return "text-\(t.hashValue)"
+        case .file(let u): return "file-\(u.absoluteString)"
+        }
+    }
+}
+
+/// Shown BEFORE parsing: the user picks their race day (the last day of the plan).
+/// Everything is scheduled backward from here, so dates are correct from the start.
+struct StartPlanSheet: View {
+    let onStart: (Date) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var raceDate = Calendar.current.date(byAdding: .weekOfYear, value: 12, to: Date()) ?? Date()
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+
+                VStack(spacing: 16) {
+                    VStack(spacing: 8) {
+                        Image(systemName: "flag.checkered")
+                            .font(.system(size: 34))
+                            .foregroundStyle(.green)
+                        Text("When's your race?")
+                            .font(.title3.bold())
+                            .foregroundStyle(.white)
+                        Text("Pick your race day — the last day of your plan. We'll schedule every workout backward from there.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.top, 16)
+                    .padding(.horizontal, 24)
+
+                    DatePicker("Race day", selection: $raceDate, in: Date()..., displayedComponents: [.date])
+                        .datePickerStyle(.graphical)
+                        .tint(.green)
+                        .colorScheme(.dark)
+                        .padding(.horizontal)
+
+                    Spacer()
+                }
+            }
+            .navigationTitle("Race Day")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color.black, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundStyle(.secondary)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Build Plan") { onStart(raceDate); dismiss() }
+                        .font(.headline)
+                        .tint(.green)
+                }
+            }
         }
     }
 }

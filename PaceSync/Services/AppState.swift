@@ -35,7 +35,7 @@ class AppState: ObservableObject {
 
     // MARK: - Import from file
 
-    func importFile(from url: URL) async {
+    func importFile(from url: URL, raceDate: Date? = nil) async {
         isLoading = true
         errorMessage = nil
         startProgress(phase: "Extracting text…")
@@ -67,7 +67,7 @@ class AppState: ObservableObject {
             }
             completeProgress()
             try? await Task.sleep(nanoseconds: 350_000_000)
-            planStore.save(plan, title: title, sourceURL: url, extractedText: text)
+            planStore.save(plan, title: title, sourceURL: url, extractedText: text, raceDate: raceDate)
             scheduleStatuses = [:]
         } catch {
             cancelProgress()
@@ -78,7 +78,7 @@ class AppState: ObservableObject {
 
     // MARK: - Import from pasted text
 
-    func importText(_ rawText: String, title: String = "Training Plan") async {
+    func importText(_ rawText: String, title: String = "Training Plan", raceDate: Date? = nil) async {
         isLoading = true
         errorMessage = nil
         startProgress(phase: "Reading plan…")
@@ -90,7 +90,7 @@ class AppState: ObservableObject {
             }
             completeProgress()
             try? await Task.sleep(nanoseconds: 350_000_000)
-            planStore.saveText(plan, title: title, rawText: rawText)
+            planStore.saveText(plan, title: title, rawText: rawText, raceDate: raceDate)
             scheduleStatuses = [:]
         } catch {
             cancelProgress()

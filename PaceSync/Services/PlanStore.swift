@@ -24,7 +24,7 @@ class PlanStore: ObservableObject {
 
     // MARK: - Save (new plan from file)
 
-    func save(_ plan: TrainingPlan, title: String, sourceURL: URL, extractedText: String? = nil) {
+    func save(_ plan: TrainingPlan, title: String, sourceURL: URL, extractedText: String? = nil, raceDate: Date? = nil) {
         let ext  = sourceURL.pathExtension.isEmpty ? "txt" : sourceURL.pathExtension
         let dest = sourcesDir.appendingPathComponent("source.\(ext)")
         // Only copy if source and destination are different paths
@@ -32,17 +32,17 @@ class PlanStore: ObservableObject {
             try? FileManager.default.removeItem(at: dest)
             try? FileManager.default.copyItem(at: sourceURL, to: dest)
         }
-        current = SavedPlan(id: UUID(), title: title, raceDate: nil,
+        current = SavedPlan(id: UUID(), title: title, raceDate: raceDate,
                             plan: plan, dateAdded: Date(),
                             sourceFileName: dest.lastPathComponent,
                             cachedSourceText: extractedText)
         persist()
     }
 
-    func saveText(_ plan: TrainingPlan, title: String, rawText: String) {
+    func saveText(_ plan: TrainingPlan, title: String, rawText: String, raceDate: Date? = nil) {
         let dest = sourcesDir.appendingPathComponent("source.txt")
         try? rawText.write(to: dest, atomically: true, encoding: .utf8)
-        current = SavedPlan(id: UUID(), title: title, raceDate: nil,
+        current = SavedPlan(id: UUID(), title: title, raceDate: raceDate,
                             plan: plan, dateAdded: Date(),
                             sourceFileName: "source.txt",
                             cachedSourceText: rawText)

@@ -22,7 +22,7 @@ struct TodayView: View {
         .background(Theme.canvas.ignoresSafeArea())
         .navigationTitle("Today")
         .navigationBarTitleDisplayMode(.large)
-        .toolbar { AddToolbar() }
+        .planChrome()
     }
 }
 

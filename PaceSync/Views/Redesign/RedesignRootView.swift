@@ -21,22 +21,6 @@ struct RedesignRootView: View {
     }
 }
 
-// MARK: - Shared "+" create action (top-right on Today and Plans)
-
-struct AddToolbar: ToolbarContent {
-    var onAdd: () -> Void = {}
-    var body: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
-            Button(action: onAdd) {
-                Image(systemName: "plus")
-                    .font(.system(size: 17, weight: .semibold))
-            }
-            .tint(Theme.accent)
-            .accessibilityLabel("Add")
-        }
-    }
-}
-
 // MARK: - Plans (library) — minimal for now; real reuse/library next
 
 struct PlansView: View {
@@ -66,7 +50,7 @@ struct PlansView: View {
         .background(Theme.canvas.ignoresSafeArea())
         .navigationTitle("Plans")
         .navigationBarTitleDisplayMode(.large)
-        .toolbar { AddToolbar() }
+        .planChrome()
     }
 }
 

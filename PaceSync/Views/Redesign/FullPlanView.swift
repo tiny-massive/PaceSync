@@ -1,7 +1,6 @@
 // FullPlanView.swift
-// Redesigned week-by-week plan view with a List ⇄ Calendar toggle.
-// List rows use the agreed pattern: "Wed 10 | Synced to Watch" header line,
-// dot + title + metric, trailing completion checkbox. Wired to real SavedPlan data.
+// Week-by-week plan view with a List ⇄ Calendar toggle. Rows reflect real completion
+// and Watch-sync state, tap through to the workout detail with the real scheduling date.
 
 import SwiftUI
 
@@ -9,8 +8,12 @@ struct FullPlanView: View {
     let plan: SavedPlan
     var unit: DistanceUnit = .kilometers
 
+    @EnvironmentObject var appState: AppState
     enum Mode: String, CaseIterable { case list = "List", calendar = "Calendar" }
     @State private var mode: Mode = .list
+
+    /// Live plan from the store so edits/completion/sync reflect immediately.
+    private var p: SavedPlan { appState.planStore.current ?? plan }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,7 +32,7 @@ struct FullPlanView: View {
             }
         }
         .background(Theme.canvas.ignoresSafeArea())
-        .navigationTitle(plan.title)
+        .navigationTitle(p.title)
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -37,7 +40,7 @@ struct FullPlanView: View {
 
     private var listContent: some View {
         LazyVStack(alignment: .leading, spacing: Theme.s5) {
-            ForEach(Array(plan.plan.weeks.enumerated()), id: \.offset) { weekIndex, days in
+            ForEach(Array(p.plan.weeks.enumerated()), id: \.offset) { weekIndex, days in
                 VStack(alignment: .leading, spacing: 9) {
                     SectionHeader(text: weekLabel(weekIndex))
                         .padding(.horizontal, Theme.s4)
@@ -46,14 +49,21 @@ struct FullPlanView: View {
                         ForEach(Array(days.enumerated()), id: \.element.id) { i, day in
                             if day.isRestDay {
                                 WorkoutRow(day: day, dateLabel: dateLabel(weekIndex, day),
-                                           unit: unit, syncState: .synced)
+                                           unit: unit, syncState: .notSynced)
                             } else {
                                 NavigationLink {
-                                    RedesignWorkoutDetail(day: day, unit: unit,
-                                                          dateText: dateLabel(weekIndex, day))
+                                    RedesignWorkoutDetail(
+                                        day: day, unit: unit,
+                                        dateText: dateLabel(weekIndex, day),
+                                        plannedDate: p.date(forWeekIndex: weekIndex, day: day)
+                                    )
                                 } label: {
-                                    WorkoutRow(day: day, dateLabel: dateLabel(weekIndex, day),
-                                               unit: unit, syncState: .synced)
+                                    WorkoutRow(
+                                        day: day, dateLabel: dateLabel(weekIndex, day),
+                                        unit: unit,
+                                        syncState: day.scheduledDate != nil ? .synced : .notSynced,
+                                        isDone: day.isCompleted
+                                    )
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -84,11 +94,11 @@ struct FullPlanView: View {
     // MARK: Helpers
 
     private func weekLabel(_ i: Int) -> String {
-        plan.currentWeekIndex == i ? "Week \(i + 1) · This week" : "Week \(i + 1)"
+        p.currentWeekIndex == i ? "Week \(i + 1) · This week" : "Week \(i + 1)"
     }
 
     private func dateLabel(_ weekIndex: Int, _ day: WorkoutDay) -> String {
-        if let d = plan.date(forWeekIndex: weekIndex, day: day) {
+        if let d = p.date(forWeekIndex: weekIndex, day: day) {
             return FullPlanView.dayFormatter.string(from: d)
         }
         return day.dayOfWeek.short

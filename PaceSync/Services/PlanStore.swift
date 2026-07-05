@@ -20,6 +20,9 @@ class PlanStore: ObservableObject {
         sourcesDir = docs.appendingPathComponent("Plans", isDirectory: true)
         try? FileManager.default.createDirectory(at: sourcesDir, withIntermediateDirectories: true)
         load()
+        #if targetEnvironment(simulator)
+        if current == nil { seedSampleForSimulator() }
+        #endif
     }
 
     // MARK: - Save (new plan from file)
@@ -158,4 +161,37 @@ class PlanStore: ObservableObject {
             print("⚠️ [PlanStore] Could not decode saved plan: \(error)")
         }
     }
+
+    #if targetEnvironment(simulator)
+    /// Simulator-only sample plan so screenshots aren't an empty shell. Never runs on device.
+    private func seedSampleForSimulator() {
+        func s(_ type: SegmentType, mi: Double? = nil, m: Double? = nil, reps: Int? = nil, effort: EffortLevel? = nil) -> WorkoutSegment {
+            WorkoutSegment(id: UUID(), type: type, durationSeconds: nil, distanceMiles: mi,
+                           distanceMeters: m, reps: reps, restDurationSeconds: nil, effort: effort, setIndex: nil)
+        }
+        func d(_ w: Int, _ dow: DayOfWeek, _ title: String, _ notes: String?, _ segs: [WorkoutSegment], race: Bool = false) -> WorkoutDay {
+            WorkoutDay(id: ClaudeParserService.stableDayID(week: w, dayOfWeek: dow), week: w,
+                       dayOfWeek: dow, title: title, notes: notes, segments: segs, isRaceDay: race)
+        }
+        var weeks: [[WorkoutDay]] = []
+        for w in 1...4 {
+            weeks.append([
+                d(w, .monday,    "Easy run",  "Easy \(3 + w) miles at conversational pace.", [s(.easy, mi: Double(3 + w))]),
+                d(w, .tuesday,   "Rest", nil, []),
+                d(w, .wednesday, "Intervals", "4×1km at 5K effort, 90s jog recovery. 1.5km warm-up + cool-down.", [s(.warmup, mi: 0.9), s(.interval, m: 1000, reps: 4, effort: .fiveK), s(.cooldown, mi: 0.9)]),
+                d(w, .thursday,  "Tempo run", "\(3 + w) miles at threshold — comfortably hard.", [s(.warmup, mi: 1), s(.tempo, mi: Double(3 + w), effort: .threshold), s(.cooldown, mi: 1)]),
+                d(w, .friday,    "Rest", nil, []),
+                d(w, .saturday,  "Easy run",  "Easy 4 miles.", [s(.easy, mi: 4)]),
+                w == 4
+                    ? d(w, .sunday, "Race day", "Half marathon — enjoy it.", [s(.easy, mi: 13.1)], race: true)
+                    : d(w, .sunday, "Long run", "Long run \(8 + w * 2) miles, steady effort.", [s(.easy, mi: Double(8 + w * 2))])
+            ])
+        }
+        let plan = TrainingPlan(id: UUID(), title: "Half Marathon Plan", weeks: weeks)
+        let race = Calendar.current.date(byAdding: .day, value: 18, to: Date()) ?? Date()
+        current = SavedPlan(id: UUID(), title: "Half Marathon Plan", raceDate: race,
+                            plan: plan, dateAdded: Date(), sourceFileName: nil, cachedSourceText: nil)
+        persist()
+    }
+    #endif
 }

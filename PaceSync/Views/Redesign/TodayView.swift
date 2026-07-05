@@ -100,7 +100,8 @@ struct PlanCard: View {
                 Text("Rest day").font(.psBody).foregroundStyle(Theme.ink2)
             } else {
                 NavigationLink {
-                    RedesignWorkoutDetail(day: tw.day, unit: unit, dateText: "Today")
+                    RedesignWorkoutDetail(day: tw.day, unit: unit, dateText: "Today",
+                                          plannedDate: Calendar.current.startOfDay(for: Date()))
                 } label: {
                     HStack(spacing: 9) {
                         CategoryDot(category: tw.day.displayCategory)
@@ -109,7 +110,11 @@ struct PlanCard: View {
                             Text(tw.day.shortMetric(unit: unit)).font(.system(size: 14)).foregroundStyle(Theme.ink2)
                         }
                         Spacer(minLength: Theme.s2)
-                        SyncChip(state: .synced)
+                        if tw.day.isCompleted {
+                            Image(systemName: "checkmark.circle.fill").font(.system(size: 15)).foregroundStyle(Theme.accent)
+                        } else {
+                            SyncChip(state: tw.day.scheduledDate != nil ? .synced : .notSynced)
+                        }
                         Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.ink3)
                     }
                 }

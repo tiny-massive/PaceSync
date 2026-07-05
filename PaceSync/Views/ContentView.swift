@@ -11,7 +11,9 @@ struct ContentView: View {
             .tint(Theme.accent)
             .environmentObject(appState)
             .task {
+                #if !targetEnvironment(simulator)
                 await WorkoutKitService.shared.requestAuthorization()
+                #endif
             }
     }
 }

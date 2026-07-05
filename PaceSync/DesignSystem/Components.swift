@@ -7,7 +7,7 @@ import SwiftUI
 
 // MARK: - Sync state
 
-enum SyncState {
+enum SyncState: Equatable {
     case synced, notSynced, failed
 
     var label: String {
@@ -173,8 +173,10 @@ struct WorkoutRow: View {
             VStack(alignment: .leading, spacing: Theme.s2) {
                 HStack(spacing: 6) {
                     Text(dateLabel)
-                    Text("|")
-                    Text(syncState.label).foregroundStyle(syncState.color)
+                    if syncState != .notSynced {
+                        Text("|")
+                        Text(syncState.label).foregroundStyle(syncState.color)
+                    }
                 }
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.ink3)

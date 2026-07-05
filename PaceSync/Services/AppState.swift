@@ -141,6 +141,7 @@ class AppState: ObservableObject {
             if confirmed {
                 scheduleStatuses[day.id] = .scheduled
                 scheduledDates[day.id] = date
+                planStore.setScheduledDate(dayID: day.id, date)   // persist so it survives relaunch
             } else {
                 scheduleStatuses[day.id] = .failed("Sync could not be verified — check your Watch.")
             }

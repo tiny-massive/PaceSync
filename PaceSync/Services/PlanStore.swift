@@ -197,6 +197,7 @@ class PlanStore: ObservableObject {
     }
 
     private func load() {
+        var migratedFromLegacy = false
         if let data = try? Data(contentsOf: storeURL),
            let decoded = try? JSONDecoder().decode([SavedPlan].self, from: data) {
             plans = decoded
@@ -204,7 +205,7 @@ class PlanStore: ObservableObject {
                   let legacy = try? JSONDecoder().decode(SavedPlan.self, from: data) {
             // Migrate the pre-library single plan into the library.
             plans = [legacy]
-            try? FileManager.default.removeItem(at: legacyURL)
+            migratedFromLegacy = true
         }
         if let s = UserDefaults.standard.string(forKey: activeKey),
            let id = UUID(uuidString: s), plans.contains(where: { $0.id == id }) {
@@ -212,7 +213,15 @@ class PlanStore: ObservableObject {
         } else {
             activePlanID = plans.first?.id
         }
-        if !plans.isEmpty { persist() }
+        // Only drop the legacy file once the migrated library is durably on disk —
+        // otherwise a failed write would lose the user's only plan.
+        if !plans.isEmpty {
+            let wrote = (try? JSONEncoder().encode(plans).write(to: storeURL)) != nil
+            UserDefaults.standard.set(activePlanID?.uuidString, forKey: activeKey)
+            if migratedFromLegacy && wrote {
+                try? FileManager.default.removeItem(at: legacyURL)
+            }
+        }
     }
 
     #if targetEnvironment(simulator)

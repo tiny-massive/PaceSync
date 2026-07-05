@@ -70,6 +70,7 @@ class AppState: ObservableObject {
             try? await Task.sleep(nanoseconds: 350_000_000)
             planStore.save(plan, title: title, sourceURL: url, extractedText: text, raceDate: raceDate)
             scheduleStatuses = [:]
+            scheduledDates = [:]
         } catch {
             cancelProgress()
             errorMessage = error.localizedDescription
@@ -93,6 +94,7 @@ class AppState: ObservableObject {
             try? await Task.sleep(nanoseconds: 350_000_000)
             planStore.saveText(plan, title: title, rawText: rawText, raceDate: raceDate)
             scheduleStatuses = [:]
+            scheduledDates = [:]
         } catch {
             cancelProgress()
             errorMessage = error.localizedDescription
@@ -113,6 +115,7 @@ class AppState: ObservableObject {
         startProgress(phase: "Loading source…")
 
         let existingRaceDate = planStore.current?.raceDate
+        let pid = planStore.activePlanID   // guard against the user switching plans mid-parse
 
         do {
             advanceProgress(to: 0.20, phase: "Sending to Claude…")
@@ -121,6 +124,9 @@ class AppState: ObservableObject {
             }
             completeProgress()
             try? await Task.sleep(nanoseconds: 350_000_000)
+            // If the active plan changed while Claude was working, drop the result rather
+            // than overwrite the now-active plan with this one's re-parse.
+            guard planStore.activePlanID == pid else { cancelProgress(); isLoading = false; return }
             // Use updatePlanOnly so we don't try to re-copy the source file over itself
             planStore.updatePlanOnly(plan, title: title, raceDate: existingRaceDate)
             scheduleStatuses = [:]
@@ -161,10 +167,12 @@ class AppState: ObservableObject {
     /// Manual completions always win — never overwritten.
     func autoMatchCompletions() async {
         guard let plan = planStore.current, let start = plan.planStartDate else { return }
+        let pid = planStore.activePlanID   // guard against a plan switch across the awaits below
         guard await HealthKitService.shared.requestReadAuthorization() else { return }
 
         let runs = await HealthKitService.shared.completedRuns(since: start)
         guard !runs.isEmpty else { return }
+        guard planStore.activePlanID == pid else { return }   // stale — user switched plans
 
         let cal = Calendar.current
         func miles(_ w: HKWorkout) -> Double { w.totalDistance?.doubleValue(for: .mile()) ?? 0 }
@@ -191,16 +199,20 @@ class AppState: ObservableObject {
 
     /// Upsert every non-rest workout into the dedicated PaceSync calendar (moves events on re-date).
     func syncCalendar() async {
-        guard let plan = planStore.current else { return }
+        // Request access first, then read the plan — so a plan captured before the await
+        // can't go stale if the user switches plans during the permission prompt.
         guard await EventKitService.shared.requestAccess() else {
             errorMessage = "Calendar access was denied. You can enable it in Settings ▸ PaceSync."
             return
         }
+        guard let plan = planStore.current else { return }
+        let pid = planStore.activePlanID
         for (weekIndex, days) in plan.plan.weeks.enumerated() {
             for day in days where !day.isRestDay {
                 guard let date = plan.date(forWeekIndex: weekIndex, day: day) else { continue }
                 if let id = EventKitService.shared.upsert(title: day.title, notes: day.notes,
                                                           date: date, existingID: day.calendarEventID) {
+                    guard planStore.activePlanID == pid else { return }
                     planStore.setCalendarEventID(dayID: day.id, id)
                 }
             }
@@ -230,7 +242,14 @@ class AppState: ObservableObject {
                 EventKitService.shared.remove(day.calendarEventID!)
             }
         }
+        let wasActive = planStore.activePlanID == id
         planStore.removePlan(id)
+        // removePlan may auto-activate the next plan; clear transient status so it can't
+        // inherit the removed plan's badges (day ids aren't unique across plans).
+        if wasActive {
+            scheduleStatuses = [:]
+            scheduledDates = [:]
+        }
     }
 
     // MARK: - Parsing progress helpers

@@ -6,18 +6,30 @@
 import SwiftUI
 
 struct RedesignRootView: View {
+    @AppStorage("distanceUnit") private var unit: DistanceUnit = .kilometers
+    @State private var selection = 0
+
     var body: some View {
-        TabView {
-            NavigationStack { TodayView() }
+        TabView(selection: $selection) {
+            NavigationStack { TodayView(unit: unit) }
+                .tag(0)
                 .tabItem { Label("Today", systemImage: "figure.run") }
 
-            NavigationStack { PlansView() }
+            NavigationStack { PlansView(unit: unit) }
+                .tag(1)
                 .tabItem { Label("Plans", systemImage: "square.stack.3d.up") }
 
             NavigationStack { SettingsView() }
+                .tag(2)
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }
         .tint(Theme.accent)
+        .onAppear {
+            #if DEBUG
+            // Test hook: launch straight to a tab via SIMCTL_CHILD_PACESYNC_TAB. Inert in normal use.
+            if let t = ProcessInfo.processInfo.environment["PACESYNC_TAB"], let i = Int(t) { selection = i }
+            #endif
+        }
     }
 }
 
@@ -114,9 +126,23 @@ struct PlansView: View {
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @AppStorage("calendarSyncEnabled") private var calendarSync = false
+    @AppStorage("distanceUnit") private var unit: DistanceUnit = .kilometers
+    @State private var cacheSize = PlanParseCache.shared.cacheSizeString
+    @State private var showClearCache = false
 
     var body: some View {
         List {
+            Section("Units") {
+                Picker(selection: $unit) {
+                    ForEach(DistanceUnit.allCases, id: \.self) { u in
+                        Text(u.displayName).tag(u)
+                    }
+                } label: {
+                    Label("Distance", systemImage: "ruler")
+                }
+                .pickerStyle(.menu)
+            }
+
             Section {
                 Toggle(isOn: $calendarSync) {
                     Label("Add plan to Calendar", systemImage: "calendar")
@@ -135,16 +161,45 @@ struct SettingsView: View {
             } header: { Text("Sync") } footer: {
                 Text("Adds your workouts to a dedicated “PaceSync” calendar on your phone.")
             }
-            Section("Completion") {
-                LabeledContent("Auto-match from Apple Watch") { Text("On").foregroundStyle(Theme.ink3) }
-            }
-            Section("Units") {
-                LabeledContent("Distance") { Text("Kilometres").foregroundStyle(Theme.ink3) }
-            }
+
             Section {
-                LabeledContent("Version") { Text("PaceSync 2.0").foregroundStyle(Theme.ink3) }
+                LabeledContent {
+                    Text("On").foregroundStyle(Theme.ink3)
+                } label: {
+                    Label("Auto-match from Apple Watch", systemImage: "applewatch")
+                }
+            } header: { Text("Completion") } footer: {
+                Text("Finished runs on your Watch tick off matching workouts automatically. You can always mark a workout done by hand.")
+            }
+
+            Section("Storage") {
+                Button {
+                    PlanParseCache.shared.clearAll()
+                    cacheSize = PlanParseCache.shared.cacheSizeString
+                    showClearCache = true
+                } label: {
+                    LabeledContent {
+                        Text(cacheSize).foregroundStyle(Theme.ink3)
+                    } label: {
+                        Label("Clear parse cache", systemImage: "trash")
+                    }
+                }
+                .tint(Theme.ink)
+            }
+
+            Section {
+                LabeledContent("Plans saved") {
+                    Text("\(appState.planStore.plans.count)").foregroundStyle(Theme.ink3)
+                }
+                LabeledContent("Version") {
+                    Text("PaceSync 2.0").foregroundStyle(Theme.ink3)
+                }
             }
         }
         .navigationTitle("Settings")
+        .onAppear { cacheSize = PlanParseCache.shared.cacheSizeString }
+        .alert("Cache cleared", isPresented: $showClearCache) {
+            Button("OK") {}
+        } message: { Text("Parsed-plan cache removed. Re-importing will parse fresh.") }
     }
 }

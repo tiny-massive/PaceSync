@@ -93,12 +93,10 @@ struct RedesignWorkoutDetail: View {
     private var syncCard: some View {
         PSCard {
             VStack(alignment: .leading, spacing: Theme.s3) {
-                SectionHeader(text: "Apple Watch")
+                SectionHeader(text: "Sync")
                 if isOnWatch {
-                    HStack(spacing: 8) {
-                        Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.accent)
-                        Text("Synced to Watch").font(.psBody).foregroundStyle(Theme.ink)
-                    }
+                    Label("On Apple Watch", systemImage: "applewatch")
+                        .font(.psBody).foregroundStyle(Theme.ink)
                 } else if case .scheduling? = status {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
@@ -111,6 +109,10 @@ struct RedesignWorkoutDetail: View {
                     }
                 } else {
                     Button("Sync to Watch") { sync() }.buttonStyle(PSPrimaryButtonStyle())
+                }
+                if d.calendarEventID != nil {
+                    Label("On your calendar", systemImage: "calendar")
+                        .font(.psCallout).foregroundStyle(Theme.ink3)
                 }
             }
         }

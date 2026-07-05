@@ -148,6 +148,10 @@ struct ProgressCard: View {
                         Text("On Watch · \(syncedCount) of \(plan.workoutCount)")
                             .font(.psCaption).foregroundStyle(Theme.ink3)
                     }
+                    if calendarCount > 0 {
+                        Text("On Calendar · \(calendarCount) of \(plan.workoutCount)")
+                            .font(.psCaption).foregroundStyle(Theme.ink3)
+                    }
                 }
                 Spacer(minLength: Theme.s2)
                 if let d = daysToRace, d >= 0 {
@@ -175,6 +179,7 @@ struct ProgressCard: View {
     }
 
     private var syncedCount: Int { plan.plan.allDays.filter { $0.scheduledDate != nil }.count }
+    private var calendarCount: Int { plan.plan.allDays.filter { $0.calendarEventID != nil }.count }
     private var weekLine: String {
         if let wi = plan.currentWeekIndex { return "Week \(wi + 1) of \(plan.plan.weeks.count)" }
         return "\(plan.plan.weeks.count)-week plan"

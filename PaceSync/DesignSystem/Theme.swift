@@ -112,19 +112,20 @@ extension WorkoutDay {
     var displayCategory: Theme.Category {
         if isRestDay { return .rest }
         let types = Set(segments.map { $0.type })
-        if types.contains(.interval) || types.contains(.hills) { return .intervals }
-        if types.contains(.tempo) { return .tempo }
+        let t = title.lowercased()
+
+        // Hard-effort types win over easy; warm-up/cool-down never dominate.
+        if types.contains(.interval) || t.contains("interval") || t.contains("rep")
+            || t.contains("speed") || t.contains("track")     { return .intervals }
+        if types.contains(.hills) || t.contains("hill")       { return .hills }
+        if types.contains(.tempo) || t.contains("tempo") || t.contains("threshold") { return .tempo }
+        if t.contains("strength") || t.contains("gym")
+            || t.contains("cross") || t.contains("weight")    { return .strength }
+        if t.contains("long")                                 { return .long }
 
         let miles = segments.compactMap { $0.distanceMiles }.reduce(0, +)
-        if miles >= 12 { return .long }
-
-        let t = title.lowercased()
-        if t.contains("long")                              { return .long }
-        if t.contains("tempo") || t.contains("threshold")  { return .tempo }
-        if t.contains("interval") || t.contains("rep")
-            || t.contains("speed") || t.contains("track")  { return .intervals }
-        if t.contains("strength") || t.contains("gym")
-            || t.contains("cross")                         { return .strength }
+        if miles >= 10                                        { return .long }
+        if types.contains(.easy) || miles > 0                 { return .easy }
         return .easy
     }
 }

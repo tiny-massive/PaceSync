@@ -156,7 +156,12 @@ struct PlanChrome: ViewModifier {
                 RaceDaySheet(date: $raceDate) {
                     appState.planStore.setRaceDate(raceDate)
                     appState.scheduleStatuses = [:]        // clear stale transient status
-                    Task { await appState.autoMatchCompletions() }
+                    Task {
+                        await appState.autoMatchCompletions()
+                        if UserDefaults.standard.bool(forKey: "calendarSyncEnabled") {
+                            await appState.syncCalendar()   // move events to the new dates
+                        }
+                    }
                 }
             }
             .alert("Rename plan", isPresented: $showRename) {

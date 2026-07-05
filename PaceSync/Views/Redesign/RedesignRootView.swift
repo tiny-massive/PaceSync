@@ -57,28 +57,36 @@ struct PlansView: View {
 // MARK: - Settings (minimal shell)
 
 struct SettingsView: View {
+    @EnvironmentObject var appState: AppState
+    @AppStorage("calendarSyncEnabled") private var calendarSync = false
+
     var body: some View {
         List {
-            Section("Units") {
-                LabeledContent("Distance", value: "Kilometres")
-            }
-            Section("Sync") {
-                LabeledContent {
-                    Text("On").foregroundStyle(Theme.ink3)
-                } label: {
-                    Label("Apple Watch", systemImage: "applewatch")
+            Section {
+                Toggle(isOn: $calendarSync) {
+                    Label("Add plan to Calendar", systemImage: "calendar")
                 }
-                LabeledContent {
-                    Text("Off").foregroundStyle(Theme.ink3)
-                } label: {
-                    Label("Calendar", systemImage: "calendar")
+                .onChange(of: calendarSync) { _, on in
+                    if on {
+                        Task {
+                            await appState.syncCalendar()
+                            if appState.errorMessage != nil { calendarSync = false }
+                        }
+                    } else {
+                        appState.clearCalendar()
+                    }
                 }
+            } header: { Text("Sync") } footer: {
+                Text("Adds your workouts to a dedicated “PaceSync” calendar on your phone.")
             }
             Section("Completion") {
-                LabeledContent("Auto-match from Apple Watch", value: "On")
+                LabeledContent("Auto-match from Apple Watch") { Text("On").foregroundStyle(Theme.ink3) }
+            }
+            Section("Units") {
+                LabeledContent("Distance") { Text("Kilometres").foregroundStyle(Theme.ink3) }
             }
             Section {
-                LabeledContent("Version", value: "PaceSync 2.0")
+                LabeledContent("Version") { Text("PaceSync 2.0").foregroundStyle(Theme.ink3) }
             }
         }
         .navigationTitle("Settings")

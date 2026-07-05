@@ -187,6 +187,35 @@ class AppState: ObservableObject {
         }
     }
 
+    // MARK: - Calendar sync (EventKit → the phone Calendar)
+
+    /// Upsert every non-rest workout into the dedicated PaceSync calendar (moves events on re-date).
+    func syncCalendar() async {
+        guard let plan = planStore.current else { return }
+        guard await EventKitService.shared.requestAccess() else {
+            errorMessage = "Calendar access was denied. You can enable it in Settings ▸ PaceSync."
+            return
+        }
+        for (weekIndex, days) in plan.plan.weeks.enumerated() {
+            for day in days where !day.isRestDay {
+                guard let date = plan.date(forWeekIndex: weekIndex, day: day) else { continue }
+                if let id = EventKitService.shared.upsert(title: day.title, notes: day.notes,
+                                                          date: date, existingID: day.calendarEventID) {
+                    planStore.setCalendarEventID(dayID: day.id, id)
+                }
+            }
+        }
+    }
+
+    /// Remove all of this plan's events from the phone Calendar.
+    func clearCalendar() {
+        guard let plan = planStore.current else { return }
+        for day in plan.plan.allDays where day.calendarEventID != nil {
+            EventKitService.shared.remove(day.calendarEventID!)
+            planStore.setCalendarEventID(dayID: day.id, nil)
+        }
+    }
+
     // MARK: - Parsing progress helpers
 
     private func startProgress(phase: String) {

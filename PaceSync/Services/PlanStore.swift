@@ -92,8 +92,8 @@ class PlanStore: ObservableObject {
         for wi in c.plan.weeks.indices {
             for di in c.plan.weeks[wi].indices {
                 c.plan.weeks[wi][di].scheduledDate = nil
-                c.plan.weeks[wi][di].calendarEventID = nil
-                // Auto-completions were pinned to the old dates — drop them so they re-match;
+                // Calendar events get MOVED (upserted) to the new dates on re-sync, so keep
+                // the link. Auto-completions were pinned to old dates — drop them to re-match;
                 // manual completions stand.
                 if c.plan.weeks[wi][di].completion?.source == .auto {
                     c.plan.weeks[wi][di].completion = nil
@@ -227,6 +227,7 @@ class PlanStore: ObservableObject {
         weeks[0][0].completion = WorkoutCompletion(isDone: true, source: .auto)
         weeks[0][2].completion = WorkoutCompletion(isDone: true, source: .manual)
         weeks[0][3].scheduledDate = Calendar.current.date(byAdding: .day, value: -10, to: Date())
+        weeks[0][5].calendarEventID = "sim-demo-event"
         let plan = TrainingPlan(id: UUID(), title: "Half Marathon Plan", weeks: weeks)
         let race = Calendar.current.date(byAdding: .day, value: 18, to: Date()) ?? Date()
         current = SavedPlan(id: UUID(), title: "Half Marathon Plan", raceDate: race,

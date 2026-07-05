@@ -50,6 +50,9 @@ struct AddPlanSheet: View {
             }
             .overlay { if appState.isLoading { progress } }
             .interactiveDismissDisabled(appState.isLoading)
+            .alert("Couldn't add plan", isPresented: errorBinding(appState)) {
+                Button("OK") {}
+            } message: { Text(appState.errorMessage ?? "") }
         }
     }
 
@@ -163,7 +166,16 @@ struct PlanChrome: ViewModifier {
             } message: {
                 Text("This removes the plan from PaceSync.")
             }
+            .alert("Something went wrong", isPresented: errorBinding(appState)) {
+                Button("OK") {}
+            } message: { Text(appState.errorMessage ?? "") }
     }
+}
+
+/// Presents AppState.errorMessage as a dismissable alert binding.
+func errorBinding(_ appState: AppState) -> Binding<Bool> {
+    Binding(get: { appState.errorMessage != nil },
+            set: { if !$0 { appState.errorMessage = nil } })
 }
 
 extension View {

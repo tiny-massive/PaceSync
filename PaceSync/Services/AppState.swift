@@ -3,6 +3,7 @@
 // Persistence is handled by PlanStore.
 
 import Combine
+import HealthKit
 import SwiftUI
 
 @MainActor
@@ -152,6 +153,32 @@ class AppState: ObservableObject {
 
     func resetScheduleStatus(for day: WorkoutDay) {
         scheduleStatuses[day.id] = .unscheduled
+    }
+
+    // MARK: - Completion auto-match (HealthKit)
+
+    /// Match completed HealthKit runs to planned workouts by date and mark them done.
+    /// Manual completions always win — never overwritten.
+    func autoMatchCompletions() async {
+        guard let plan = planStore.current, let start = plan.planStartDate else { return }
+        guard await HealthKitService.shared.requestReadAuthorization() else { return }
+
+        let runs = await HealthKitService.shared.completedRuns(since: start)
+        guard !runs.isEmpty else { return }
+
+        let cal = Calendar.current
+        for (weekIndex, days) in plan.plan.weeks.enumerated() {
+            for day in days where !day.isRestDay && !day.isCompleted {
+                guard let plannedDate = plan.date(forWeekIndex: weekIndex, day: day) else { continue }
+                if let match = runs.first(where: { cal.isDate($0.startDate, inSameDayAs: plannedDate) }) {
+                    planStore.setCompletion(dayID: day.id,
+                                            WorkoutCompletion(isDone: true,
+                                                              completedDate: match.startDate,
+                                                              source: .auto,
+                                                              healthKitWorkoutID: match.uuid))
+                }
+            }
+        }
     }
 
     // MARK: - Parsing progress helpers

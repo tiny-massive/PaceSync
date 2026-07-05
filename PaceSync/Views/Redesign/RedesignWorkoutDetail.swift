@@ -1,6 +1,7 @@
 // RedesignWorkoutDetail.swift
 // Workout detail — parsed segments + the coach's original text (upsized), plus the
-// REAL actions reconnected: Sync to Watch (WorkoutKit), persisted Mark-done, Edit.
+// REAL actions: Sync to Watch (WorkoutKit), persisted Mark-done, Edit. Renders the LIVE
+// workout from the store so edits/completion/sync reflect immediately.
 
 import SwiftUI
 
@@ -14,27 +15,27 @@ struct RedesignWorkoutDetail: View {
     @EnvironmentObject var appState: AppState
     @State private var showEdit = false
 
-    /// Live copy from the store so completion/schedule reflect writes immediately.
-    private var liveDay: WorkoutDay {
+    /// Live copy from the store so content + completion + schedule reflect writes immediately.
+    private var d: WorkoutDay {
         appState.planStore.current?.plan.allDays.first { $0.id == day.id } ?? day
     }
     private var status: ScheduleStatus? { appState.scheduleStatuses[day.id] }
     private var isOnWatch: Bool {
         if case .scheduled? = status { return true }
-        return liveDay.scheduledDate != nil
+        return d.scheduledDate != nil
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.s5) {
                 headerCard
-                if !day.isRestDay { syncCard }
-                if !day.segments.isEmpty { sessionCard }
-                if let notes = day.notes?.trimmingCharacters(in: .whitespacesAndNewlines),
+                if !d.isRestDay { syncCard }
+                if !d.segments.isEmpty { sessionCard }
+                if let notes = d.notes?.trimmingCharacters(in: .whitespacesAndNewlines),
                    !notes.isEmpty {
                     fromPlanCard(notes)
                 }
-                if !day.isRestDay {
+                if !d.isRestDay {
                     Button { showEdit = true } label: {
                         Label("Edit workout", systemImage: "pencil")
                     }
@@ -46,7 +47,7 @@ struct RedesignWorkoutDetail: View {
             .padding(.bottom, Theme.s6)
         }
         .background(Theme.canvas.ignoresSafeArea())
-        .navigationTitle(day.isRestDay ? "Rest day" : day.title)
+        .navigationTitle(d.isRestDay ? "Rest day" : d.title)
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showEdit) {
             NavigationStack { EditWorkoutView(dayID: day.id) }
@@ -60,16 +61,16 @@ struct RedesignWorkoutDetail: View {
         PSCard {
             VStack(alignment: .leading, spacing: Theme.s3) {
                 HStack(spacing: 9) {
-                    if !day.isRestDay { CategoryDot(category: day.displayCategory, size: 11) }
-                    Text(day.isRestDay ? "Rest day" : day.title)
+                    if !d.isRestDay { CategoryDot(category: d.displayCategory, size: 11) }
+                    Text(d.isRestDay ? "Rest day" : d.title)
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(Theme.ink)
                     Spacer()
-                    if !day.isRestDay {
+                    if !d.isRestDay {
                         Button { toggleDone() } label: {
                             HStack(spacing: 7) {
-                                CompletionCheckbox(isDone: liveDay.isCompleted)
-                                Text(liveDay.isCompleted ? "Done" : "Mark done")
+                                CompletionCheckbox(isDone: d.isCompleted)
+                                Text(d.isCompleted ? "Done" : "Mark done")
                                     .font(.psCaption).foregroundStyle(Theme.ink2)
                             }
                         }
@@ -79,7 +80,7 @@ struct RedesignWorkoutDetail: View {
                 if !subtitle.isEmpty {
                     Text(subtitle).font(.psCallout).foregroundStyle(Theme.ink2)
                 }
-                if let c = liveDay.completion, c.isDone {
+                if let c = d.completion, c.isDone {
                     Text(c.source == .auto ? "Auto-detected from your Apple Watch" : "Marked done")
                         .font(.psCaption).foregroundStyle(Theme.ink3)
                 }
@@ -121,7 +122,7 @@ struct RedesignWorkoutDetail: View {
         VStack(alignment: .leading, spacing: 9) {
             SectionHeader(text: "The session")
             PSCard(padded: false) {
-                ForEach(Array(day.segments.enumerated()), id: \.element.id) { i, seg in
+                ForEach(Array(d.segments.enumerated()), id: \.element.id) { i, seg in
                     HStack {
                         Text(segmentName(seg.type))
                             .font(.psHeadline).foregroundStyle(Theme.ink)
@@ -131,7 +132,7 @@ struct RedesignWorkoutDetail: View {
                     }
                     .padding(.horizontal, Theme.s4)
                     .padding(.vertical, Theme.s3)
-                    if i < day.segments.count - 1 {
+                    if i < d.segments.count - 1 {
                         Rectangle().fill(Theme.hairline).frame(height: 1)
                             .padding(.leading, Theme.s4)
                     }
@@ -158,7 +159,7 @@ struct RedesignWorkoutDetail: View {
     // MARK: Actions
 
     private func toggleDone() {
-        if liveDay.isCompleted {
+        if d.isCompleted {
             appState.planStore.setCompletion(dayID: day.id, nil)
         } else {
             appState.planStore.setCompletion(dayID: day.id,
@@ -167,7 +168,8 @@ struct RedesignWorkoutDetail: View {
     }
 
     private func sync() {
-        Task { await appState.scheduleWorkout(day, on: plannedDate ?? Date()) }
+        guard let date = plannedDate else { return }
+        Task { await appState.scheduleWorkout(d, on: date) }
     }
 
     // MARK: Helpers
@@ -175,7 +177,7 @@ struct RedesignWorkoutDetail: View {
     private var subtitle: String {
         var parts: [String] = []
         if !dateText.isEmpty { parts.append(dateText) }
-        let miles = day.segments.compactMap { $0.distanceMiles }.reduce(0, +)
+        let miles = d.segments.compactMap { $0.distanceMiles }.reduce(0, +)
         if miles > 0 { parts.append(unit.format(miles)) }
         return parts.joined(separator: " · ")
     }

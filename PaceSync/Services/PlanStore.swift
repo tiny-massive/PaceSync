@@ -55,11 +55,26 @@ class PlanStore: ObservableObject {
     // MARK: - Update plan in-place (used by reparse — does NOT touch source file)
 
     func updatePlanOnly(_ plan: TrainingPlan, title: String, raceDate: Date?) {
+        // Carry per-day state (completion / Watch schedule / calendar link) forward across a
+        // re-import, matched by stable day id, so re-parsing never wipes it.
+        var newPlan = plan
+        if let old = current {
+            let byID = Dictionary(old.plan.allDays.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            for wi in newPlan.weeks.indices {
+                for di in newPlan.weeks[wi].indices {
+                    if let prev = byID[newPlan.weeks[wi][di].id] {
+                        newPlan.weeks[wi][di].completion      = prev.completion
+                        newPlan.weeks[wi][di].scheduledDate   = prev.scheduledDate
+                        newPlan.weeks[wi][di].calendarEventID = prev.calendarEventID
+                    }
+                }
+            }
+        }
         current = SavedPlan(
             id: current?.id ?? UUID(),
             title: title,
             raceDate: raceDate,
-            plan: plan,
+            plan: newPlan,
             dateAdded: current?.dateAdded ?? Date(),
             sourceFileName: current?.sourceFileName,
             cachedSourceText: current?.cachedSourceText
@@ -70,7 +85,17 @@ class PlanStore: ObservableObject {
     // MARK: - Mutations
 
     func setRaceDate(_ date: Date?) {
-        current?.raceDate = date
+        guard var c = current else { return }
+        c.raceDate = date
+        // Every workout date derives from the race date, so shifting it lands any existing
+        // Watch/Calendar sync on the wrong day — mark them for re-sync.
+        for wi in c.plan.weeks.indices {
+            for di in c.plan.weeks[wi].indices {
+                c.plan.weeks[wi][di].scheduledDate = nil
+                c.plan.weeks[wi][di].calendarEventID = nil
+            }
+        }
+        current = c
         persist()
     }
 
@@ -84,7 +109,14 @@ class PlanStore: ObservableObject {
         guard var saved = current else { return }
         for wi in saved.plan.weeks.indices {
             if let di = saved.plan.weeks[wi].firstIndex(where: { $0.id == updatedDay.id }) {
-                saved.plan.weeks[wi][di] = updatedDay
+                var d = updatedDay
+                // Content changed, so any Watch/Calendar copy is now stale — clear the links
+                // (shows "not synced", ready to re-push). Completion reflects whether the run
+                // happened, so keep it.
+                d.scheduledDate = nil
+                d.calendarEventID = nil
+                d.completion = saved.plan.weeks[wi][di].completion
+                saved.plan.weeks[wi][di] = d
                 break
             }
         }
@@ -187,6 +219,9 @@ class PlanStore: ObservableObject {
                     : d(w, .sunday, "Long run", "Long run \(8 + w * 2) miles, steady effort.", [s(.easy, mi: Double(8 + w * 2))])
             ])
         }
+        weeks[0][0].completion = WorkoutCompletion(isDone: true, source: .auto)
+        weeks[0][2].completion = WorkoutCompletion(isDone: true, source: .manual)
+        weeks[0][3].scheduledDate = Calendar.current.date(byAdding: .day, value: -10, to: Date())
         let plan = TrainingPlan(id: UUID(), title: "Half Marathon Plan", weeks: weeks)
         let race = Calendar.current.date(byAdding: .day, value: 18, to: Date()) ?? Date()
         current = SavedPlan(id: UUID(), title: "Half Marathon Plan", raceDate: race,

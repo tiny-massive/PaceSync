@@ -14,8 +14,7 @@ struct EditWorkoutView: View {
     @State private var editingSegment: WorkoutSegment?
     @State private var addingSegment = false
 
-    @AppStorage("distanceUnit") private var distanceUnitRaw: String = DistanceUnit.miles.rawValue
-    private var unit: DistanceUnit { DistanceUnit(rawValue: distanceUnitRaw) ?? .miles }
+    @AppStorage("distanceUnit") private var unit: DistanceUnit = .kilometers
 
     private var day: WorkoutDay? {
         appState.planStore.current?.plan.allDays.first { $0.id == dayID }
@@ -172,19 +171,26 @@ struct EditSegmentSheet: View {
     @State private var reps: Int
     @State private var effort: EffortLevel?
 
-    private let segmentID: UUID
+    /// The original segment, so fields the editor doesn't manage (distanceMeters for track
+    /// intervals, recovery rest, the repeat-group index) survive an edit instead of being wiped.
+    private let original: WorkoutSegment
+    /// The distance string we seeded the field with — lets us tell whether the user changed it.
+    private let seededDistanceInput: String
+    private var segmentID: UUID { original.id }
 
-    init(segment: WorkoutSegment, unit: DistanceUnit = .miles,
+    init(segment: WorkoutSegment, unit: DistanceUnit = .kilometers,
          onSave: @escaping (WorkoutSegment) -> Void) {
         self.onSave    = onSave
         self.unit      = unit
-        self.segmentID = segment.id
+        self.original  = segment
         _type            = State(initialValue: segment.type)
         _durationMinutes = State(initialValue: segment.durationSeconds.map { String($0 / 60) } ?? "")
-        // Convert stored miles → user's preferred unit for display
-        _distanceInput   = State(initialValue: segment.distanceMiles.map {
-            String(format: "%.2f", unit.convert($0))
-        } ?? "")
+        // Seed the distance field from miles, or from a metre value (track intervals) converted
+        // to the display unit, so a 1000m rep shows a value instead of an empty field.
+        let seededMiles = segment.distanceMiles ?? segment.distanceMeters.map { $0 / 1609.34 }
+        let seeded = seededMiles.map { String(format: "%.2f", unit.convert($0)) } ?? ""
+        self.seededDistanceInput = seeded
+        _distanceInput   = State(initialValue: seeded)
         _reps            = State(initialValue: segment.reps ?? 1)
         _effort          = State(initialValue: segment.effort)
     }
@@ -270,16 +276,30 @@ struct EditSegmentSheet: View {
 
     private func saveAndDismiss() {
         let seconds = Int(durationMinutes).map { $0 * 60 }
-        // Convert user's unit back to miles for internal storage
-        let miles: Double? = Double(distanceInput).map { unit.toMiles($0) }
+        let trimmed = distanceInput.trimmingCharacters(in: .whitespaces)
+
+        // If the distance field is untouched, keep the original representation exactly (so a
+        // metre-based interval keeps its metres). If edited, store the typed value as miles.
+        let distanceMiles: Double?
+        let distanceMeters: Double?
+        if trimmed == seededDistanceInput {
+            distanceMiles  = original.distanceMiles
+            distanceMeters = original.distanceMeters
+        } else {
+            distanceMiles  = Double(trimmed).map { unit.toMiles($0) }
+            distanceMeters = nil
+        }
+
         let segment = WorkoutSegment(
             id: segmentID,
             type: type,
             durationSeconds: seconds,
-            distanceMiles: miles,
-            reps: showReps ? reps : nil,
-            restDurationSeconds: nil,
-            effort: effort
+            distanceMiles: distanceMiles,
+            distanceMeters: distanceMeters,
+            reps: showReps ? reps : original.reps,
+            restDurationSeconds: original.restDurationSeconds,   // preserve recovery rest
+            effort: effort,
+            setIndex: original.setIndex                          // keep it in its repeat group
         )
         onSave(segment)
         dismiss()

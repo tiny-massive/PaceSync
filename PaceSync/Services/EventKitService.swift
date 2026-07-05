@@ -67,8 +67,12 @@ final class EventKitService {
         }
     }
 
-    func remove(_ id: String) {
-        guard let e = store.event(withIdentifier: id) else { return }
-        try? store.remove(e, span: .thisEvent, commit: true)
+    /// Returns true if the event is gone afterwards (removed, or already absent), false if
+    /// removal actively failed — so callers can avoid dropping a still-live event's id.
+    @discardableResult
+    func remove(_ id: String) -> Bool {
+        guard let e = store.event(withIdentifier: id) else { return true }
+        do { try store.remove(e, span: .thisEvent, commit: true); return true }
+        catch { return false }
     }
 }

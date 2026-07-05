@@ -129,6 +129,7 @@ struct SettingsView: View {
     @AppStorage("distanceUnit") private var unit: DistanceUnit = .kilometers
     @State private var cacheSize = PlanParseCache.shared.cacheSizeString
     @State private var showClearCache = false
+    @State private var revertingSync = false   // programmatic toggle-off after a failed sync
 
     var body: some View {
         List {
@@ -148,11 +149,17 @@ struct SettingsView: View {
                     Label("Add plan to Calendar", systemImage: "calendar")
                 }
                 .onChange(of: calendarSync) { _, on in
+                    // A failed sync flips the toggle back off; that revert must NOT run
+                    // clearCalendar (there's nothing synced to clear, and access is denied).
+                    if revertingSync { revertingSync = false; return }
                     if on {
                         Task {
                             appState.errorMessage = nil   // don't let a stale error revert a good sync
                             await appState.syncCalendar()
-                            if appState.errorMessage != nil { calendarSync = false }
+                            if appState.errorMessage != nil {
+                                revertingSync = true
+                                calendarSync = false
+                            }
                         }
                     } else {
                         appState.clearCalendar()

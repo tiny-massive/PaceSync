@@ -184,7 +184,9 @@ class AppState: ObservableObject {
                 // Longest run that day, and require it to cover at least half the planned
                 // distance (when known) — so a short jog can't tick off a long run.
                 guard let match = sameDay.max(by: { miles($0) < miles($1) }) else { continue }
-                let plannedMiles = day.segments.compactMap { $0.distanceMiles }.reduce(0, +)
+                let plannedMiles = day.segments.reduce(0.0) { sum, seg in
+                    sum + (seg.distanceMiles ?? 0) + (seg.distanceMeters.map { $0 / 1609.34 } ?? 0)
+                }
                 if plannedMiles > 0 && miles(match) < plannedMiles * 0.5 { continue }
                 planStore.setCompletion(dayID: day.id,
                                         WorkoutCompletion(isDone: true,
@@ -219,12 +221,14 @@ class AppState: ObservableObject {
         }
     }
 
-    /// Remove all of this plan's events from the phone Calendar.
+    /// Remove all of this plan's events from the phone Calendar. Only drops the stored id when
+    /// the event is actually gone, so a failed removal (e.g. access revoked) doesn't orphan it.
     func clearCalendar() {
         guard let plan = planStore.current else { return }
         for day in plan.plan.allDays where day.calendarEventID != nil {
-            EventKitService.shared.remove(day.calendarEventID!)
-            planStore.setCalendarEventID(dayID: day.id, nil)
+            if EventKitService.shared.remove(day.calendarEventID!) {
+                planStore.setCalendarEventID(dayID: day.id, nil)
+            }
         }
     }
 

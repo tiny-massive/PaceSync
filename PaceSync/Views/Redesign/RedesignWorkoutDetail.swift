@@ -162,7 +162,10 @@ struct RedesignWorkoutDetail: View {
 
     private func toggleDone() {
         if d.isCompleted {
-            appState.planStore.setCompletion(dayID: day.id, nil)
+            // Write a manual "not done" tombstone (not nil) so HealthKit auto-match can't
+            // silently re-complete a run the user deliberately un-marked.
+            appState.planStore.setCompletion(dayID: day.id,
+                                             WorkoutCompletion(isDone: false, source: .manual))
         } else {
             appState.planStore.setCompletion(dayID: day.id,
                                              WorkoutCompletion(isDone: true, source: .manual))

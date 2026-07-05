@@ -173,6 +173,22 @@ class PlanStore: ObservableObject {
         mutateDay(dayID) { $0.calendarEventID = id }
     }
 
+    /// Mutate a day in a SPECIFIC plan (not necessarily the active one) — used to clear calendar
+    /// event ids across every plan when the user turns calendar sync off.
+    func mutateDay(inPlan planID: UUID, dayID: UUID, _ transform: (inout WorkoutDay) -> Void) {
+        guard let pi = plans.firstIndex(where: { $0.id == planID }) else { return }
+        for wi in plans[pi].plan.weeks.indices {
+            if let di = plans[pi].plan.weeks[wi].firstIndex(where: { $0.id == dayID }) {
+                transform(&plans[pi].plan.weeks[wi][di])
+                persist()
+                return
+            }
+        }
+    }
+    func setCalendarEventID(planID: UUID, dayID: UUID, _ id: String?) {
+        mutateDay(inPlan: planID, dayID: dayID) { $0.calendarEventID = id }
+    }
+
     // MARK: - Source file access (active plan)
 
     func sourceFileURL() -> URL? {

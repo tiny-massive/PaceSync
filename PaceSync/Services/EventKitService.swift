@@ -67,10 +67,16 @@ final class EventKitService {
         }
     }
 
-    /// Returns true if the event is gone afterwards (removed, or already absent), false if
-    /// removal actively failed — so callers can avoid dropping a still-live event's id.
+    /// Returns true only if the event is genuinely gone afterwards (removed, or absent while we
+    /// CAN see the calendar). Returns false when we lack access — because then a nil lookup means
+    /// "not visible to us", not "deleted", and dropping the stored id would orphan a live event.
     @discardableResult
     func remove(_ id: String) -> Bool {
+        let status = EKEventStore.authorizationStatus(for: .event)
+        let authorized: Bool
+        if #available(iOS 17.0, *) { authorized = (status == .fullAccess) }
+        else { authorized = (status == .authorized) }
+        guard authorized else { return false }
         guard let e = store.event(withIdentifier: id) else { return true }
         do { try store.remove(e, span: .thisEvent, commit: true); return true }
         catch { return false }

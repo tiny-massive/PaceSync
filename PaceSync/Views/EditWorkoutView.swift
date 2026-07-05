@@ -174,8 +174,9 @@ struct EditSegmentSheet: View {
     /// The original segment, so fields the editor doesn't manage (distanceMeters for track
     /// intervals, recovery rest, the repeat-group index) survive an edit instead of being wiped.
     private let original: WorkoutSegment
-    /// The distance string we seeded the field with — lets us tell whether the user changed it.
+    /// The strings we seeded the fields with — let us tell whether the user changed them.
     private let seededDistanceInput: String
+    private let seededDurationInput: String
     private var segmentID: UUID { original.id }
 
     init(segment: WorkoutSegment, unit: DistanceUnit = .kilometers,
@@ -184,7 +185,9 @@ struct EditSegmentSheet: View {
         self.unit      = unit
         self.original  = segment
         _type            = State(initialValue: segment.type)
-        _durationMinutes = State(initialValue: segment.durationSeconds.map { String($0 / 60) } ?? "")
+        let seededDur = segment.durationSeconds.map { String($0 / 60) } ?? ""
+        self.seededDurationInput = seededDur
+        _durationMinutes = State(initialValue: seededDur)
         // Seed the distance field from miles, or from a metre value (track intervals) converted
         // to the display unit, so a 1000m rep shows a value instead of an empty field.
         let seededMiles = segment.distanceMiles ?? segment.distanceMeters.map { $0 / 1609.34 }
@@ -275,7 +278,12 @@ struct EditSegmentSheet: View {
     }
 
     private func saveAndDismiss() {
-        let seconds = Int(durationMinutes).map { $0 * 60 }
+        // Keep the exact original seconds when the minutes field is untouched — the field shows
+        // only whole minutes, so recomputing would truncate e.g. a 90s recovery to 60s.
+        let durTrimmed = durationMinutes.trimmingCharacters(in: .whitespaces)
+        let seconds: Int? = (durTrimmed == seededDurationInput)
+            ? original.durationSeconds
+            : Int(durTrimmed).map { $0 * 60 }
         let trimmed = distanceInput.trimmingCharacters(in: .whitespaces)
 
         // If the distance field is untouched, keep the original representation exactly (so a

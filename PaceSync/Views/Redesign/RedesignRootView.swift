@@ -156,7 +156,10 @@ struct SettingsView: View {
                         Task {
                             appState.errorMessage = nil   // don't let a stale error revert a good sync
                             await appState.syncCalendar()
-                            if appState.errorMessage != nil {
+                            // Only flip the toggle back if it's still on. If the user already
+                            // turned it off mid-sync, setting it false again would be a no-op that
+                            // never re-fires onChange, leaving revertingSync stuck true.
+                            if appState.errorMessage != nil, calendarSync {
                                 revertingSync = true
                                 calendarSync = false
                             }

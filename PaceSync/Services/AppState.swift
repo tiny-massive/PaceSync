@@ -140,11 +140,14 @@ class AppState: ObservableObject {
     // MARK: - Schedule
 
     func scheduleWorkout(_ day: WorkoutDay, on date: Date) async {
+        let pid = planStore.activePlanID   // day ids collide across plans — bind to this plan
         scheduleStatuses[day.id] = .scheduling
 
         do {
             try await WorkoutKitService.shared.schedule(day, on: date)
             let confirmed = await WorkoutKitService.shared.isScheduled(day)
+            // If the user switched plans mid-schedule, don't stamp another plan's same-slot day.
+            guard planStore.activePlanID == pid else { return }
             if confirmed {
                 scheduleStatuses[day.id] = .scheduled
                 scheduledDates[day.id] = date
@@ -153,6 +156,7 @@ class AppState: ObservableObject {
                 scheduleStatuses[day.id] = .failed("Sync could not be verified — check your Watch.")
             }
         } catch {
+            guard planStore.activePlanID == pid else { return }
             scheduleStatuses[day.id] = .failed(error.localizedDescription)
         }
     }
@@ -178,7 +182,9 @@ class AppState: ObservableObject {
         func miles(_ w: HKWorkout) -> Double { w.totalDistance?.doubleValue(for: .mile()) ?? 0 }
 
         for (weekIndex, days) in plan.plan.weeks.enumerated() {
-            for day in days where !day.isRestDay && !day.isCompleted {
+            // Skip any day that already carries a completion — including a manual "not done"
+            // tombstone — so a run the user deliberately un-marked isn't auto-marked again.
+            for day in days where !day.isRestDay && day.completion == nil {
                 guard let plannedDate = plan.date(forWeekIndex: weekIndex, day: day) else { continue }
                 let sameDay = runs.filter { cal.isDate($0.startDate, inSameDayAs: plannedDate) }
                 // Longest run that day, and require it to cover at least half the planned
@@ -209,34 +215,57 @@ class AppState: ObservableObject {
         }
         guard let plan = planStore.current else { return }
         let pid = planStore.activePlanID
+        var attempts = 0, failures = 0
         for (weekIndex, days) in plan.plan.weeks.enumerated() {
             for day in days where !day.isRestDay {
                 guard let date = plan.date(forWeekIndex: weekIndex, day: day) else { continue }
+                attempts += 1
                 if let id = EventKitService.shared.upsert(title: day.title, notes: day.notes,
                                                           date: date, existingID: day.calendarEventID) {
                     guard planStore.activePlanID == pid else { return }
                     planStore.setCalendarEventID(dayID: day.id, id)
+                } else {
+                    failures += 1
+                }
+            }
+        }
+        // Remove events for days that are no longer workouts (e.g. re-parsed into a rest day),
+        // otherwise the old all-day event lingers on a date with nothing scheduled.
+        for day in plan.plan.allDays where day.isRestDay && day.calendarEventID != nil {
+            guard planStore.activePlanID == pid else { return }
+            if EventKitService.shared.remove(day.calendarEventID!) {
+                planStore.setCalendarEventID(dayID: day.id, nil)
+            }
+        }
+        // If nothing could be written, surface it so the Settings toggle reverts instead of
+        // pretending the plan is on the calendar.
+        if attempts > 0 && failures == attempts {
+            errorMessage = "Couldn't add your workouts to Calendar — no writable calendar is available."
+        }
+    }
+
+    /// Remove EVERY plan's events from the phone Calendar (the sync toggle is global). Only drops
+    /// a stored id when the event is actually gone, so a failed removal doesn't orphan it.
+    func clearCalendar() {
+        for plan in planStore.plans {
+            for day in plan.plan.allDays where day.calendarEventID != nil {
+                if EventKitService.shared.remove(day.calendarEventID!) {
+                    planStore.setCalendarEventID(planID: plan.id, dayID: day.id, nil)
                 }
             }
         }
     }
 
-    /// Remove all of this plan's events from the phone Calendar. Only drops the stored id when
-    /// the event is actually gone, so a failed removal (e.g. access revoked) doesn't orphan it.
-    func clearCalendar() {
-        guard let plan = planStore.current else { return }
-        for day in plan.plan.allDays where day.calendarEventID != nil {
-            if EventKitService.shared.remove(day.calendarEventID!) {
-                planStore.setCalendarEventID(dayID: day.id, nil)
-            }
-        }
-    }
-
     /// Switch the active plan and drop transient per-day status so nothing bleeds across plans.
+    /// If calendar sync is on, reconcile so the calendar holds the newly-active plan's events
+    /// (not the outgoing plan's) instead of orphaning them under the global toggle.
     func activatePlan(_ id: UUID) {
+        let syncOn = UserDefaults.standard.bool(forKey: "calendarSyncEnabled")
+        if syncOn { clearCalendar() }          // remove the outgoing plan's events first
         planStore.activate(id)
         scheduleStatuses = [:]
         scheduledDates = [:]
+        if syncOn { Task { await syncCalendar() } }   // then add the newly-active plan's
     }
 
     /// Remove a saved plan and clean up its calendar events (no orphans left behind).

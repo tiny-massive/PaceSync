@@ -84,7 +84,7 @@ class ClaudeParserService {
             }
             parsedWorkoutDays.append(contentsOf: batchDays)
             done += batchDays.count
-            progressCallback?(
+             progressCallback?(
                 0.25 + 0.75 * Double(done) / Double(max(total, 1)),
                 "Parsed \(done) of \(total) workouts…"
             )

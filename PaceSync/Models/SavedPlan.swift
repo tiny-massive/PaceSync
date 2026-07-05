@@ -13,7 +13,7 @@ struct SavedPlan: Codable, Identifiable {
     /// Raw source text cached in-memory (and persisted) so re-parse works even if the source file is missing.
     var cachedSourceText: String?
     /// Persisted schema version for safe migrations. nil = legacy (pre-versioning).
-    var schemaVersion: Int? = 2
+    var schemaVersion: Int? = 3
 
     // MARK: - Race-date derived properties
 
@@ -65,5 +65,9 @@ struct SavedPlan: Codable, Identifiable {
 
     var workoutCount: Int {
         plan.allDays.filter { !$0.segments.isEmpty }.count
+    }
+
+    var completedCount: Int {
+        plan.allDays.filter { $0.isCompleted }.count
     }
 }

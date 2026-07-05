@@ -106,8 +106,16 @@ struct WorkoutDay: Identifiable, Codable {
     /// True when Claude explicitly identifies this as the race day.
     /// Falls back to positional detection (last day of last week) if false everywhere.
     var isRaceDay: Bool = false
+    /// Per-day completion (manual or HealthKit auto-match). nil = not completed.
+    var completion: WorkoutCompletion? = nil
+    /// The scheduled calendar date when this day is on Apple Watch. nil = not on Watch.
+    var scheduledDate: Date? = nil
+    /// EventKit identifier when this day is on the phone Calendar. nil = not on Calendar.
+    var calendarEventID: String? = nil
 
     var isRestDay: Bool { segments.isEmpty }
+    var isCompleted: Bool { completion?.isDone == true }
+    var isSyncedToWatch: Bool { scheduledDate != nil }
 
     var summary: String {
         let types = segments.map { $0.type.rawValue }.joined(separator: ", ")
@@ -118,7 +126,9 @@ struct WorkoutDay: Identifiable, Codable {
     // which suppresses Swift's synthesised memberwise initialiser).
     // nonisolated so it can be called from background TaskGroup contexts.
     nonisolated init(id: UUID, week: Int, dayOfWeek: DayOfWeek, title: String,
-                     notes: String?, segments: [WorkoutSegment], isRaceDay: Bool = false) {
+                     notes: String?, segments: [WorkoutSegment], isRaceDay: Bool = false,
+                     completion: WorkoutCompletion? = nil, scheduledDate: Date? = nil,
+                     calendarEventID: String? = nil) {
         self.id        = id
         self.week      = week
         self.dayOfWeek = dayOfWeek
@@ -126,10 +136,14 @@ struct WorkoutDay: Identifiable, Codable {
         self.notes     = notes
         self.segments  = segments
         self.isRaceDay = isRaceDay
+        self.completion      = completion
+        self.scheduledDate   = scheduledDate
+        self.calendarEventID = calendarEventID
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, week, dayOfWeek, title, notes, segments, isRaceDay
+        case completion, scheduledDate, calendarEventID
     }
 
     // Custom decoder: falls back to false when isRaceDay is absent so plans saved
@@ -143,8 +157,30 @@ struct WorkoutDay: Identifiable, Codable {
         notes     = try c.decodeIfPresent(String.self,  forKey: .notes)
         segments  = try c.decode([WorkoutSegment].self, forKey: .segments)
         isRaceDay = (try? c.decodeIfPresent(Bool.self,  forKey: .isRaceDay)) ?? false
+        completion      = (try? c.decodeIfPresent(WorkoutCompletion.self, forKey: .completion)) ?? nil
+        scheduledDate   = (try? c.decodeIfPresent(Date.self,   forKey: .scheduledDate)) ?? nil
+        calendarEventID = (try? c.decodeIfPresent(String.self, forKey: .calendarEventID)) ?? nil
     }
 }
+
+// MARK: - Completion
+
+struct WorkoutCompletion: Codable, Equatable {
+    var isDone: Bool
+    var completedDate: Date?
+    var source: CompletionSource
+    var healthKitWorkoutID: UUID?
+
+    init(isDone: Bool = true, completedDate: Date? = Date(),
+         source: CompletionSource = .manual, healthKitWorkoutID: UUID? = nil) {
+        self.isDone = isDone
+        self.completedDate = completedDate
+        self.source = source
+        self.healthKitWorkoutID = healthKitWorkoutID
+    }
+}
+
+enum CompletionSource: String, Codable, Equatable { case manual, auto }
 
 enum DayOfWeek: String, Codable, CaseIterable {
     case monday, tuesday, wednesday, thursday, friday, saturday, sunday

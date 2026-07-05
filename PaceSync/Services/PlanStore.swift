@@ -89,6 +89,29 @@ class PlanStore: ObservableObject {
         persist()
     }
 
+    /// Mutate a single day in place by id and persist. Basis for completion / schedule / calendar writes.
+    func mutateDay(_ dayID: UUID, _ transform: (inout WorkoutDay) -> Void) {
+        guard var saved = current else { return }
+        for wi in saved.plan.weeks.indices {
+            if let di = saved.plan.weeks[wi].firstIndex(where: { $0.id == dayID }) {
+                transform(&saved.plan.weeks[wi][di])
+                current = saved
+                persist()
+                return
+            }
+        }
+    }
+
+    func setCompletion(dayID: UUID, _ completion: WorkoutCompletion?) {
+        mutateDay(dayID) { $0.completion = completion }
+    }
+    func setScheduledDate(dayID: UUID, _ date: Date?) {
+        mutateDay(dayID) { $0.scheduledDate = date }
+    }
+    func setCalendarEventID(dayID: UUID, _ id: String?) {
+        mutateDay(dayID) { $0.calendarEventID = id }
+    }
+
     func clear() {
         // Remove source files
         if let name = current?.sourceFileName {

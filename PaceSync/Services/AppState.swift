@@ -167,16 +167,22 @@ class AppState: ObservableObject {
         guard !runs.isEmpty else { return }
 
         let cal = Calendar.current
+        func miles(_ w: HKWorkout) -> Double { w.totalDistance?.doubleValue(for: .mile()) ?? 0 }
+
         for (weekIndex, days) in plan.plan.weeks.enumerated() {
             for day in days where !day.isRestDay && !day.isCompleted {
                 guard let plannedDate = plan.date(forWeekIndex: weekIndex, day: day) else { continue }
-                if let match = runs.first(where: { cal.isDate($0.startDate, inSameDayAs: plannedDate) }) {
-                    planStore.setCompletion(dayID: day.id,
-                                            WorkoutCompletion(isDone: true,
-                                                              completedDate: match.startDate,
-                                                              source: .auto,
-                                                              healthKitWorkoutID: match.uuid))
-                }
+                let sameDay = runs.filter { cal.isDate($0.startDate, inSameDayAs: plannedDate) }
+                // Longest run that day, and require it to cover at least half the planned
+                // distance (when known) — so a short jog can't tick off a long run.
+                guard let match = sameDay.max(by: { miles($0) < miles($1) }) else { continue }
+                let plannedMiles = day.segments.compactMap { $0.distanceMiles }.reduce(0, +)
+                if plannedMiles > 0 && miles(match) < plannedMiles * 0.5 { continue }
+                planStore.setCompletion(dayID: day.id,
+                                        WorkoutCompletion(isDone: true,
+                                                          completedDate: match.startDate,
+                                                          source: .auto,
+                                                          healthKitWorkoutID: match.uuid))
             }
         }
     }

@@ -93,6 +93,11 @@ class PlanStore: ObservableObject {
             for di in c.plan.weeks[wi].indices {
                 c.plan.weeks[wi][di].scheduledDate = nil
                 c.plan.weeks[wi][di].calendarEventID = nil
+                // Auto-completions were pinned to the old dates — drop them so they re-match;
+                // manual completions stand.
+                if c.plan.weeks[wi][di].completion?.source == .auto {
+                    c.plan.weeks[wi][di].completion = nil
+                }
             }
         }
         current = c

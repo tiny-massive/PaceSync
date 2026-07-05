@@ -33,7 +33,7 @@ struct PlansView: View {
                 if let plan = appState.planStore.current {
                     VStack(alignment: .leading, spacing: 9) {
                         SectionHeader(text: "Active")
-                        PlanCard(plan: plan, unit: unit)
+                        ProgressCard(plan: plan, unit: unit)
                     }
                     VStack(alignment: .leading, spacing: 9) {
                         SectionHeader(text: "My plans")

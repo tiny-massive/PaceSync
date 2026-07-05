@@ -37,7 +37,7 @@ final class HealthKitService {
                 sortDescriptors: nil
             ) { _, samples, _ in
                 let runs = (samples as? [HKWorkout])?.filter {
-                    $0.workoutActivityType == .running || $0.workoutActivityType == .walking
+                    $0.workoutActivityType == .running
                 } ?? []
                 cont.resume(returning: runs)
             }

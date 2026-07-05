@@ -153,7 +153,11 @@ struct PlanChrome: ViewModifier {
             }
             .sheet(isPresented: $showAdd) { AddPlanSheet().environmentObject(appState) }
             .sheet(isPresented: $showRaceDate) {
-                RaceDaySheet(date: $raceDate) { appState.planStore.setRaceDate(raceDate) }
+                RaceDaySheet(date: $raceDate) {
+                    appState.planStore.setRaceDate(raceDate)
+                    appState.scheduleStatuses = [:]        // clear stale transient status
+                    Task { await appState.autoMatchCompletions() }
+                }
             }
             .alert("Rename plan", isPresented: $showRename) {
                 TextField("Name", text: $renameText)

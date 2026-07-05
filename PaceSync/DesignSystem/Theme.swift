@@ -69,16 +69,17 @@ enum Theme {
 
     // MARK: Workout categories — one dot vocabulary across rows, calendar & detail
     enum Category {
-        case easy, long, tempo, intervals, strength, rest
+        case easy, long, tempo, intervals, hills, strength, rest
 
         var color: Color {
             switch self {
-            case .easy:      return dyn(0x3178C6, 0x6FB3F2)
-            case .long:      return dyn(0x4F52C9, 0x9B93F5)
-            case .tempo:     return dyn(0xC2610E, 0xF0A03A)
-            case .intervals: return dyn(0xB32B5E, 0xF26FA0)
-            case .strength:  return dyn(0x9C36B5, 0xDA8FFF)
-            case .rest:      return dyn(0xB4BAC4, 0x6B7078)
+            case .easy:      return dyn(0x3178C6, 0x6FB3F2)   // blue
+            case .long:      return dyn(0x0E7490, 0x22D3EE)   // cyan — clearly apart from easy-blue
+            case .tempo:     return dyn(0xC2610E, 0xF0A03A)   // orange
+            case .intervals: return dyn(0xB32B5E, 0xF26FA0)   // crimson
+            case .hills:     return dyn(0x92610F, 0xD9A05B)   // brown — its own type, not intervals
+            case .strength:  return dyn(0x7C3AED, 0xA78BFA)   // purple
+            case .rest:      return dyn(0xB4BAC4, 0x6B7078)   // neutral grey
             }
         }
     }

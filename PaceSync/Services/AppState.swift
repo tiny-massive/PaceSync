@@ -213,6 +213,9 @@ class AppState: ObservableObject {
             errorMessage = "Calendar access was denied. You can enable it in Settings ▸ PaceSync."
             return
         }
+        // If sync was turned off while we awaited access (e.g. during a plan switch), don't
+        // write events the user no longer wants — every caller only wants to sync while it's on.
+        guard UserDefaults.standard.bool(forKey: "calendarSyncEnabled") else { return }
         guard let plan = planStore.current else { return }
         let pid = planStore.activePlanID
         var attempts = 0, failures = 0

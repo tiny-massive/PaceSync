@@ -170,10 +170,12 @@ struct PlanChrome: ViewModifier {
                 Button("Cancel", role: .cancel) {}
             }
             .alert("Remove this plan?", isPresented: $showRemove) {
-                Button("Remove", role: .destructive) { appState.planStore.clear() }
+                Button("Remove", role: .destructive) {
+                    if let id = appState.planStore.activePlanID { appState.removePlan(id) }
+                }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This removes the plan from PaceSync.")
+                Text("This removes the plan from PaceSync and clears its calendar events.")
             }
             .alert("Something went wrong", isPresented: errorBinding(appState)) {
                 Button("OK") {}

@@ -21,27 +21,51 @@ struct RedesignRootView: View {
     }
 }
 
-// MARK: - Plans (library) — minimal for now; real reuse/library next
+// MARK: - Plans (library) — the active plan + every other saved plan you can switch to
 
 struct PlansView: View {
     @EnvironmentObject var appState: AppState
     var unit: DistanceUnit = .kilometers
+    @State private var pendingRemove: SavedPlan?
+
+    private var store: PlanStore { appState.planStore }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.s5) {
-                if let plan = appState.planStore.current {
-                    VStack(alignment: .leading, spacing: 9) {
-                        SectionHeader(text: "Active")
-                        ProgressCard(plan: plan, unit: unit)
-                    }
-                    VStack(alignment: .leading, spacing: 9) {
-                        SectionHeader(text: "My plans")
-                        Text("Saved plans and reuse — coming next")
-                            .font(.psCallout).foregroundStyle(Theme.ink3)
-                    }
-                } else {
+                if store.plans.isEmpty {
                     EmptyPlanState().padding(.top, 60)
+                } else {
+                    if let active = store.current {
+                        VStack(alignment: .leading, spacing: 9) {
+                            SectionHeader(text: "Active")
+                            ProgressCard(plan: active, unit: unit)
+                        }
+                    }
+                    let others = store.plans.filter { $0.id != store.activePlanID }
+                    if !others.isEmpty {
+                        VStack(alignment: .leading, spacing: 9) {
+                            SectionHeader(text: store.current == nil ? "My plans" : "Switch plan")
+                            PSCard(padded: false) {
+                                ForEach(Array(others.enumerated()), id: \.element.id) { i, plan in
+                                    Button { appState.activatePlan(plan.id) } label: { planRow(plan) }
+                                        .buttonStyle(.plain)
+                                        .contextMenu {
+                                            Button { appState.activatePlan(plan.id) } label: {
+                                                Label("Make active", systemImage: "checkmark.circle")
+                                            }
+                                            Button(role: .destructive) { pendingRemove = plan } label: {
+                                                Label("Remove", systemImage: "trash")
+                                            }
+                                        }
+                                    if i < others.count - 1 {
+                                        Rectangle().fill(Theme.hairline).frame(height: 1)
+                                            .padding(.leading, Theme.s4)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             .padding(.horizontal, Theme.s4)
@@ -51,7 +75,38 @@ struct PlansView: View {
         .navigationTitle("Plans")
         .navigationBarTitleDisplayMode(.large)
         .planChrome()
+        .alert("Remove this plan?", isPresented: Binding(
+            get: { pendingRemove != nil }, set: { if !$0 { pendingRemove = nil } })) {
+            Button("Remove", role: .destructive) { if let p = pendingRemove { appState.removePlan(p.id) } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the plan from PaceSync and clears its calendar events.")
+        }
     }
+
+    private func planRow(_ plan: SavedPlan) -> some View {
+        HStack(spacing: Theme.s3) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(plan.title).font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.ink)
+                Text(subtitle(plan)).font(.psCallout).foregroundStyle(Theme.ink2)
+            }
+            Spacer(minLength: Theme.s2)
+            Text("Activate").font(.psCaption).foregroundStyle(Theme.accent)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.ink3)
+        }
+        .padding(.horizontal, Theme.s4)
+        .padding(.vertical, Theme.s3)
+        .contentShape(Rectangle())
+    }
+
+    private func subtitle(_ plan: SavedPlan) -> String {
+        var parts = ["\(plan.plan.weeks.count)-week plan"]
+        if let r = plan.raceDate { parts.append("Race \(PlansView.fmt.string(from: r))") }
+        if plan.completedCount > 0 { parts.append("\(plan.completedCount) done") }
+        return parts.joined(separator: " · ")
+    }
+    static let fmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "d MMM"; return f }()
 }
 
 // MARK: - Settings (minimal shell)
@@ -69,6 +124,7 @@ struct SettingsView: View {
                 .onChange(of: calendarSync) { _, on in
                     if on {
                         Task {
+                            appState.errorMessage = nil   // don't let a stale error revert a good sync
                             await appState.syncCalendar()
                             if appState.errorMessage != nil { calendarSync = false }
                         }

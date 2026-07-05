@@ -216,6 +216,23 @@ class AppState: ObservableObject {
         }
     }
 
+    /// Switch the active plan and drop transient per-day status so nothing bleeds across plans.
+    func activatePlan(_ id: UUID) {
+        planStore.activate(id)
+        scheduleStatuses = [:]
+        scheduledDates = [:]
+    }
+
+    /// Remove a saved plan and clean up its calendar events (no orphans left behind).
+    func removePlan(_ id: UUID) {
+        if let p = planStore.plans.first(where: { $0.id == id }) {
+            for day in p.plan.allDays where day.calendarEventID != nil {
+                EventKitService.shared.remove(day.calendarEventID!)
+            }
+        }
+        planStore.removePlan(id)
+    }
+
     // MARK: - Parsing progress helpers
 
     private func startProgress(phase: String) {

@@ -23,3 +23,6 @@ PaceSync/Services/Secrets.swift
 
 # Local Netlify folder
 .netlify
+
+# Cloudflare Wrangler local state / cache (contains account id + owner email)
+.wrangler/

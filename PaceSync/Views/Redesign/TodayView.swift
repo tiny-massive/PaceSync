@@ -24,9 +24,9 @@ struct TodayView: View {
             }
         }
         .background(Theme.canvas.ignoresSafeArea())
-        .navigationTitle("Upcoming")
-        .navigationBarTitleDisplayMode(.large)
-        .planChrome()
+        .navigationTitle("Home")
+        .navigationBarTitleDisplayMode(.inline)   // centered title
+        .addPlanChrome()
         .sheet(isPresented: $showAdd) { AddPlanSheet().environmentObject(appState) }
     }
 }

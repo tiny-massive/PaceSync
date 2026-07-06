@@ -263,28 +263,15 @@ class PlanStore: ObservableObject {
 
     private func load() {
         let fm = FileManager.default
-
-        // --- Diagnostics: what's actually on disk? (read-only) ---
-        func size(_ url: URL) -> Int? { (try? fm.attributesOfItem(atPath: url.path))?[.size] as? Int }
-        if let s = size(storeURL) { print("📦 [PlanStore] plans.json EXISTS — \(s) bytes") }
-        else { print("📦 [PlanStore] plans.json MISSING") }
-        if let s = size(legacyURL) { print("📦 [PlanStore] savedplan.json EXISTS — \(s) bytes") }
-        else { print("📦 [PlanStore] savedplan.json MISSING") }
-        let docs = storeURL.deletingLastPathComponent()
-        print("📦 [PlanStore] Documents: \((try? fm.contentsOfDirectory(atPath: docs.path)) ?? [])")
-        print("📦 [PlanStore] Plans/: \((try? fm.contentsOfDirectory(atPath: sourcesDir.path)) ?? [])")
-        print("📦 [PlanStore] UserDefaults backup present: \(UserDefaults.standard.data(forKey: backupKey) != nil)")
-
         var libraryDecoded = false
         var migratedFromLegacy = false
 
-        // 1) The library file. Log the exact decode error if it fails.
+        // 1) The library file. Log a decode failure (rare, worth surfacing) but stay quiet otherwise.
         if let data = try? Data(contentsOf: storeURL) {
             do {
                 plans = try JSONDecoder().decode([SavedPlan].self, from: data)
                 libraryDecoded = true
-                print("📦 [PlanStore] decoded plans.json → \(plans.count): \(plans.map { $0.title })")
-            } catch { print("📦 [PlanStore] ⚠️ plans.json DECODE FAILED — \(error)") }
+            } catch { print("⚠️ [PlanStore] plans.json DECODE FAILED — \(error)") }
         }
 
         // Only reach for fallbacks when the library file is ABSENT or CORRUPT — not when it

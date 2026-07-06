@@ -173,10 +173,12 @@ struct WorkoutRow: View {
             .padding(.vertical, Theme.s3)
         } else {
             VStack(alignment: .leading, spacing: Theme.s2) {
-                HStack(spacing: 6) {
+                HStack(spacing: 5) {
                     Text(dateLabel)
-                    if syncState != .notSynced {
-                        Text("|")
+                    Text("·")
+                    if isDone {
+                        Text("Done").foregroundStyle(Theme.accent)
+                    } else {
                         Text(syncState.label).foregroundStyle(syncState.color)
                     }
                 }

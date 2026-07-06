@@ -14,7 +14,7 @@ struct RedesignRootView: View {
         TabView(selection: $selection) {
             NavigationStack { TodayView(unit: unit) }
                 .tag(0)
-                .tabItem { Label("Upcoming", systemImage: "figure.run") }
+                .tabItem { Label("Home", systemImage: "house.fill") }
 
             NavigationStack { PlansView(unit: unit) }
                 .tag(1)
@@ -87,7 +87,7 @@ struct PlansView: View {
         .background(Theme.canvas.ignoresSafeArea())
         .navigationTitle("Plans")
         .navigationBarTitleDisplayMode(.large)
-        .planChrome()
+        .addPlanChrome()
         .alert("Remove this plan?", isPresented: Binding(
             get: { pendingRemove != nil }, set: { if !$0 { pendingRemove = nil } })) {
             Button("Remove", role: .destructive) { if let p = pendingRemove { appState.removePlan(p.id) } }

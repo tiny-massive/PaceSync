@@ -1,3 +1,7 @@
 name = "pacesync-proxy"
 main = "worker.js"
 compatibility_date = "2025-06-01"
+
+[[kv_namespaces]]
+binding = "RATE_KV"
+id = "470c061f470342509c1b023a25b9a183"

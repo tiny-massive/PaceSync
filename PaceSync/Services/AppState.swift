@@ -141,8 +141,10 @@ class AppState: ObservableObject {
             // If the active plan changed while Claude was working, drop the result rather
             // than overwrite the now-active plan with this one's re-parse.
             guard planStore.activePlanID == pid else { cancelProgress(); isLoading = false; return }
-            // Use updatePlanOnly so we don't try to re-copy the source file over itself
-            planStore.updatePlanOnly(plan, title: title, raceDate: existingRaceDate)
+            // Use updatePlanOnly so we don't try to re-copy the source file over itself. It returns
+            // calendar events for days that didn't survive the re-parse — remove them (no orphans).
+            let orphanedEvents = planStore.updatePlanOnly(plan, title: title, raceDate: existingRaceDate)
+            for eid in orphanedEvents { EventKitService.shared.remove(eid) }
             scheduleStatuses = [:]
         } catch {
             cancelProgress()

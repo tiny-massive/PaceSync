@@ -164,22 +164,31 @@ class PlanStore: ObservableObject {
 
     // MARK: - Update the active plan in-place (reparse — does NOT touch the source file)
 
-    func updatePlanOnly(_ plan: TrainingPlan, title: String, raceDate: Date?) {
-        guard let old = current else { return }
+    /// Re-parse the active plan, carrying completion/schedule/calendar state forward by day id.
+    /// Returns calendar event ids for old days that DON'T survive the re-parse (a day dropped or
+    /// restructured), so the caller can delete those EKEvents instead of orphaning them.
+    @discardableResult
+    func updatePlanOnly(_ plan: TrainingPlan, title: String, raceDate: Date?) -> [String] {
+        guard let old = current else { return [] }
         var newPlan = plan
         let byID = Dictionary(old.plan.allDays.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var carried = Set<String>()
         for wi in newPlan.weeks.indices {
             for di in newPlan.weeks[wi].indices {
                 if let prev = byID[newPlan.weeks[wi][di].id] {
                     newPlan.weeks[wi][di].completion      = prev.completion
                     newPlan.weeks[wi][di].scheduledDate   = prev.scheduledDate
                     newPlan.weeks[wi][di].calendarEventID = prev.calendarEventID
+                    if let eid = prev.calendarEventID { carried.insert(eid) }
                 }
             }
         }
+        // Any old calendar event whose day didn't survive the re-parse would otherwise linger.
+        let orphaned = old.plan.allDays.compactMap { $0.calendarEventID }.filter { !carried.contains($0) }
         current = SavedPlan(id: old.id, title: title, raceDate: raceDate, plan: newPlan,
                             dateAdded: old.dateAdded, sourceFileName: old.sourceFileName,
                             cachedSourceText: old.cachedSourceText)
+        return orphaned
     }
 
     // MARK: - Mutations (operate on the active plan)

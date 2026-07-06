@@ -257,7 +257,9 @@ class ClaudeParserService {
                 effort: seg.effort.flatMap { EffortLevel(rawValue: $0) },
                 setIndex: seg.setIndex
             )
+            #if DEBUG
             print("🏃 [ClaudeParser] Seg: \(seg.type) distM=\(seg.distanceMeters ?? -1) distMi=\(seg.distanceMiles ?? -1) dur=\(seg.durationSeconds ?? -1) reps=\(seg.reps ?? -1) effort=\(seg.effort ?? "-")")
+            #endif
             return segs
         }
     }

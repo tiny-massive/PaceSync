@@ -173,20 +173,32 @@ class PlanStore: ObservableObject {
         mutateDay(dayID) { $0.calendarEventID = id }
     }
 
-    /// Mutate a day in a SPECIFIC plan (not necessarily the active one) — used to clear calendar
-    /// event ids across every plan when the user turns calendar sync off.
-    func mutateDay(inPlan planID: UUID, dayID: UUID, _ transform: (inout WorkoutDay) -> Void) {
-        guard let pi = plans.firstIndex(where: { $0.id == planID }) else { return }
-        for wi in plans[pi].plan.weeks.indices {
-            if let di = plans[pi].plan.weeks[wi].firstIndex(where: { $0.id == dayID }) {
-                transform(&plans[pi].plan.weeks[wi][di])
-                persist()
-                return
+    /// Clear the calendarEventID on many days across possibly-many plans in ONE shot — a single
+    /// in-memory pass, one @Published mutation, and one persist() — instead of one of each per
+    /// event (which caused a re-render + full-array JSON encode storm on the main thread when a
+    /// user with several synced plans turned calendar sync off).
+    func clearCalendarEventIDs(_ days: [(planID: UUID, dayID: UUID)]) {
+        guard !days.isEmpty else { return }
+        var byPlan: [UUID: Set<UUID>] = [:]
+        for d in days { byPlan[d.planID, default: []].insert(d.dayID) }
+
+        var updated = plans     // mutate a local copy so @Published fires just once at the end
+        var changed = false
+        for pi in updated.indices {
+            guard let dayIDs = byPlan[updated[pi].id] else { continue }
+            for wi in updated[pi].plan.weeks.indices {
+                for di in updated[pi].plan.weeks[wi].indices {
+                    if dayIDs.contains(updated[pi].plan.weeks[wi][di].id),
+                       updated[pi].plan.weeks[wi][di].calendarEventID != nil {
+                        updated[pi].plan.weeks[wi][di].calendarEventID = nil
+                        changed = true
+                    }
+                }
             }
         }
-    }
-    func setCalendarEventID(planID: UUID, dayID: UUID, _ id: String?) {
-        mutateDay(inPlan: planID, dayID: dayID) { $0.calendarEventID = id }
+        guard changed else { return }
+        plans = updated   // one @Published change → one re-render
+        persist()         // one JSON encode + one disk write
     }
 
     // MARK: - Source file access (active plan)

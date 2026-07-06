@@ -67,18 +67,50 @@ final class EventKitService {
         }
     }
 
+    /// True only when we can actually see and remove events. When not authorized a nil lookup
+    /// means "not visible to us", not "deleted", so callers must NOT treat it as removed.
+    private var canRemoveEvents: Bool {
+        let status = EKEventStore.authorizationStatus(for: .event)
+        if #available(iOS 17.0, *) { return status == .fullAccess }
+        return status == .authorized
+    }
+
     /// Returns true only if the event is genuinely gone afterwards (removed, or absent while we
-    /// CAN see the calendar). Returns false when we lack access — because then a nil lookup means
-    /// "not visible to us", not "deleted", and dropping the stored id would orphan a live event.
+    /// CAN see the calendar). Returns false when we lack access, so callers don't orphan a live event.
     @discardableResult
     func remove(_ id: String) -> Bool {
-        let status = EKEventStore.authorizationStatus(for: .event)
-        let authorized: Bool
-        if #available(iOS 17.0, *) { authorized = (status == .fullAccess) }
-        else { authorized = (status == .authorized) }
-        guard authorized else { return false }
+        guard canRemoveEvents else { return false }
         guard let e = store.event(withIdentifier: id) else { return true }
         do { try store.remove(e, span: .thisEvent, commit: true); return true }
         catch { return false }
+    }
+
+    /// Remove many events with a SINGLE commit (one disk write) instead of one commit per event.
+    /// Returns the set of ids that are genuinely gone afterwards, so callers clear only those and
+    /// retain the rest. Same auth-gate as `remove`.
+    @discardableResult
+    func removeBatch(_ ids: [String]) -> Set<String> {
+        let unique = Set(ids)
+        guard !unique.isEmpty, canRemoveEvents else { return [] }
+        var gone = Set<String>()      // already absent — safe to clear regardless of commit
+        var staged = Set<String>()    // staged for removal, pending one commit
+        for id in unique {
+            guard let e = store.event(withIdentifier: id) else { gone.insert(id); continue }
+            do {
+                try store.remove(e, span: .thisEvent, commit: false)
+                staged.insert(id)
+            } catch {
+                // couldn't stage — leave out of the result so its id is retained
+            }
+        }
+        if !staged.isEmpty {
+            do {
+                try store.commit()
+                gone.formUnion(staged)
+            } catch {
+                store.reset()   // discard the staged removals — they didn't persist
+            }
+        }
+        return gone
     }
 }

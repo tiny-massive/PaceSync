@@ -247,16 +247,22 @@ class AppState: ObservableObject {
         }
     }
 
-    /// Remove EVERY plan's events from the phone Calendar (the sync toggle is global). Only drops
-    /// a stored id when the event is actually gone, so a failed removal doesn't orphan it.
+    /// Remove EVERY plan's events from the phone Calendar (the sync toggle is global). Batches the
+    /// EventKit commit and the store write, so a multi-plan clear is one disk write + one re-render
+    /// instead of O(events). Only drops an id when its event was actually removed — nothing orphaned.
     func clearCalendar() {
+        var pairs: [(planID: UUID, dayID: UUID, eventID: String)] = []
         for plan in planStore.plans {
-            for day in plan.plan.allDays where day.calendarEventID != nil {
-                if EventKitService.shared.remove(day.calendarEventID!) {
-                    planStore.setCalendarEventID(planID: plan.id, dayID: day.id, nil)
-                }
+            for day in plan.plan.allDays {
+                if let eid = day.calendarEventID { pairs.append((plan.id, day.id, eid)) }
             }
         }
+        guard !pairs.isEmpty else { return }
+        let removed = EventKitService.shared.removeBatch(pairs.map { $0.eventID })
+        let cleared = pairs
+            .filter { removed.contains($0.eventID) }
+            .map { (planID: $0.planID, dayID: $0.dayID) }
+        planStore.clearCalendarEventIDs(cleared)
     }
 
     /// Switch the active plan and drop transient per-day status so nothing bleeds across plans.

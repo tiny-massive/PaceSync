@@ -225,30 +225,60 @@ class PlanStore: ObservableObject {
     }
 
     private func load() {
-        var migratedFromLegacy = false
-        if let data = try? Data(contentsOf: storeURL),
-           let decoded = try? JSONDecoder().decode([SavedPlan].self, from: data) {
-            plans = decoded
-        } else if let data = try? Data(contentsOf: legacyURL),
-                  let legacy = try? JSONDecoder().decode(SavedPlan.self, from: data) {
-            // Migrate the pre-library single plan into the library.
-            plans = [legacy]
-            migratedFromLegacy = true
+        let fm = FileManager.default
+
+        // --- Diagnostics: what's actually on disk? (read-only) ---
+        func size(_ url: URL) -> Int? {
+            (try? fm.attributesOfItem(atPath: url.path))?[.size] as? Int
         }
+        if let s = size(storeURL) { print("📦 [PlanStore] plans.json EXISTS — \(s) bytes") }
+        else { print("📦 [PlanStore] plans.json MISSING") }
+        if let s = size(legacyURL) { print("📦 [PlanStore] savedplan.json EXISTS — \(s) bytes") }
+        else { print("📦 [PlanStore] savedplan.json MISSING") }
+        let docs = storeURL.deletingLastPathComponent()
+        if let items = try? fm.contentsOfDirectory(atPath: docs.path) {
+            print("📦 [PlanStore] Documents contains: \(items)")
+        }
+
+        var migratedFromLegacy = false
+        // Try the library file first — log the exact decode error if it fails.
+        if let data = try? Data(contentsOf: storeURL) {
+            do {
+                plans = try JSONDecoder().decode([SavedPlan].self, from: data)
+                print("📦 [PlanStore] decoded plans.json → \(plans.count) plan(s): \(plans.map { $0.title })")
+            } catch {
+                print("📦 [PlanStore] ⚠️ plans.json DECODE FAILED — \(error)")
+            }
+        }
+        // Fall back to the legacy single-plan file if the library is empty for ANY reason
+        // (missing OR failed to decode) — never give up while data may still be on disk.
+        if plans.isEmpty, let data = try? Data(contentsOf: legacyURL) {
+            do {
+                plans = [try JSONDecoder().decode(SavedPlan.self, from: data)]
+                migratedFromLegacy = true
+                print("📦 [PlanStore] recovered savedplan.json → 1 plan: \(plans.map { $0.title })")
+            } catch {
+                print("📦 [PlanStore] ⚠️ savedplan.json DECODE FAILED — \(error)")
+            }
+        }
+
         if let s = UserDefaults.standard.string(forKey: activeKey),
            let id = UUID(uuidString: s), plans.contains(where: { $0.id == id }) {
             activePlanID = id
         } else {
             activePlanID = plans.first?.id
         }
-        // Only drop the legacy file once the migrated library is durably on disk —
-        // otherwise a failed write would lose the user's only plan.
+        // Only ever WRITE when we actually loaded something — a failed decode must NOT clobber
+        // the on-disk file, so the data stays recoverable. Also drop the legacy file only after
+        // a confirmed migration write.
         if !plans.isEmpty {
             let wrote = (try? JSONEncoder().encode(plans).write(to: storeURL)) != nil
             UserDefaults.standard.set(activePlanID?.uuidString, forKey: activeKey)
             if migratedFromLegacy && wrote {
-                try? FileManager.default.removeItem(at: legacyURL)
+                try? fm.removeItem(at: legacyURL)
             }
+        } else {
+            print("📦 [PlanStore] loaded 0 plans — NOT writing (preserving any on-disk file)")
         }
     }
 

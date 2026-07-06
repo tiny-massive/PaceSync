@@ -266,12 +266,12 @@ class PlanStore: ObservableObject {
         var weeks: [[WorkoutDay]] = []
         for w in 1...4 {
             weeks.append([
-                d(w, .monday,    "Easy run",  "Easy \(3 + w) miles at conversational pace.", [s(.easy, mi: Double(3 + w))]),
+                d(w, .monday,    "Easy run",  "8–12 miles easy plus 6 × 20 sec hill strides", [s(.easy)]),
                 d(w, .tuesday,   "Rest", nil, []),
                 d(w, .wednesday, "Intervals", "4×1km at 5K effort, 90s jog recovery. 1.5km warm-up + cool-down.", [s(.warmup, mi: 0.9), s(.interval, m: 1000, reps: 4, effort: .fiveK), s(.cooldown, mi: 0.9)]),
                 d(w, .thursday,  "Tempo run", "\(3 + w) miles at threshold — comfortably hard.", [s(.warmup, mi: 1), s(.tempo, mi: Double(3 + w), effort: .threshold), s(.cooldown, mi: 1)]),
                 d(w, .friday,    "Rest", nil, []),
-                d(w, .saturday,  "Easy run",  "Easy 4 miles.", [s(.easy, mi: 4)]),
+                d(w, .saturday,  "Easy run",  "12–16 miles easy/mod", [s(.easy)]),
                 w == 4
                     ? d(w, .sunday, "Race day", "Half marathon — enjoy it.", [s(.easy, mi: 13.1)], race: true)
                     : d(w, .sunday, "Long run", "Long run \(8 + w * 2) miles, steady effort.", [s(.easy, mi: Double(8 + w * 2))])

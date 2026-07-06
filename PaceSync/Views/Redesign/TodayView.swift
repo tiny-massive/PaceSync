@@ -13,7 +13,8 @@ struct TodayView: View {
         ScrollView {
             if let plan = appState.planStore.current {
                 VStack(spacing: Theme.s4) {
-                    TodayWorkoutCard(plan: plan, unit: unit)
+                    TodayCard(plan: plan, unit: unit)
+                    UpNextCard(plan: plan, unit: unit)
                     ProgressCard(plan: plan, unit: unit)
                 }
                 .padding(.horizontal, Theme.s4)
@@ -30,101 +31,161 @@ struct TodayView: View {
     }
 }
 
-// MARK: - Card A — today's workout
+// MARK: - Surface card chrome (shared)
 
-struct TodayWorkoutCard: View {
+private struct SurfaceCard: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(Theme.s4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous)
+                .strokeBorder(Theme.hairline, lineWidth: 1))
+    }
+}
+private extension View { func surfaceCard() -> some View { modifier(SurfaceCard()) } }
+
+// MARK: - Shared workout row — date + sync ABOVE the title, then title + distance. Tappable.
+
+struct TodayWorkoutRow: View {
+    let day: WorkoutDay
+    let dateText: String
+    var plannedDate: Date?
+    var unit: DistanceUnit = .kilometers
+
+    private var dist: String { day.distanceLabel(unit: unit) }
+    private var syncState: SyncState { day.scheduledDate != nil ? .synced : .notSynced }
+
+    var body: some View {
+        NavigationLink {
+            RedesignWorkoutDetail(day: day, unit: unit, dateText: dateText, plannedDate: plannedDate)
+        } label: {
+            VStack(alignment: .leading, spacing: Theme.s2) {
+                header
+                HStack(spacing: 9) {
+                    CategoryDot(category: day.displayCategory, size: 10)
+                    Text(day.title)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Theme.ink)
+                        .lineLimit(2)
+                    Spacer(minLength: Theme.s2)
+                    if !dist.isEmpty {
+                        Text(dist).font(.psCallout).foregroundStyle(Theme.ink2).psTabular().fixedSize()
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.ink3)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // date · sync/done — the sync status lives up here so you don't have to open the workout.
+    private var header: some View {
+        HStack(spacing: 5) {
+            Text(dateText)
+            Text("·")
+            if day.isCompleted {
+                Text("Done").foregroundStyle(Theme.accent)
+            } else {
+                Text(syncState.label).foregroundStyle(syncState.color)
+            }
+        }
+        .font(.psCaption)
+        .foregroundStyle(Theme.ink3)
+    }
+}
+
+// MARK: - Card A — TODAY only (workout / rest / nothing). Never bleeds into "next".
+
+struct TodayCard: View {
     let plan: SavedPlan
     var unit: DistanceUnit = .kilometers
 
+    private var today: (weekIndex: Int, day: WorkoutDay)? { plan.workout(on: Date()) }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.s3) {
-            SectionHeader(text: "Today")
-            content
-        }
-        .padding(Theme.s4)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous)
-            .strokeBorder(Theme.hairline, lineWidth: 1))
+        VStack(alignment: .leading, spacing: Theme.s3) { content }.surfaceCard()
     }
 
     @ViewBuilder private var content: some View {
-        if let tw = todayWorkout, !tw.day.isRestDay {
-            NavigationLink {
-                RedesignWorkoutDetail(day: tw.day, unit: unit, dateText: "Today",
-                                      plannedDate: Calendar.current.startOfDay(for: Date()))
-            } label: { row(tw.day) }
-            .buttonStyle(.plain)
-        } else if todayWorkout?.day.isRestDay == true {
-            HStack {
-                Text("Rest day").font(.psBody).foregroundStyle(Theme.ink2)
-                Spacer()
-                if let n = nextWorkout {
-                    Text("Next · \(n.label)").font(.psCallout).foregroundStyle(Theme.ink3)
-                }
-            }
-        } else if let n = nextWorkout {
-            NavigationLink {
-                RedesignWorkoutDetail(day: n.day, unit: unit, dateText: n.label, plannedDate: n.date)
-            } label: {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Nothing scheduled today").font(.psCallout).foregroundStyle(Theme.ink3)
-                    row(n.day, dateOverride: "Next · \(n.label)")
-                }
-            }
-            .buttonStyle(.plain)
+        if let tw = today, !tw.day.isRestDay {
+            TodayWorkoutRow(day: tw.day, dateText: "Today",
+                            plannedDate: Calendar.current.startOfDay(for: Date()), unit: unit)
+        } else if today?.day.isRestDay == true {
+            emptyState("Rest day")
         } else {
-            Text("No workouts scheduled").font(.psBody).foregroundStyle(Theme.ink3)
+            emptyState("Nothing scheduled today")
         }
     }
 
-    private func row(_ day: WorkoutDay, dateOverride: String? = nil) -> some View {
-        HStack(spacing: 9) {
-            CategoryDot(category: day.displayCategory, size: 10)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(day.title).font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.ink)
-                if let o = dateOverride {
-                    Text(o).font(.psCaption).foregroundStyle(Theme.ink3)
-                } else if !day.shortMetric(unit: unit).isEmpty {
-                    Text(day.shortMetric(unit: unit)).font(.psCallout).foregroundStyle(Theme.ink2)
+    // "Today" on top, then the state text in the SAME typeface/size as a workout title.
+    private func emptyState(_ text: String) -> some View {
+        VStack(alignment: .leading, spacing: Theme.s2) {
+            Text("Today").font(.psCaption).foregroundStyle(Theme.ink3)
+            Text(text).font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.ink2)
+        }
+    }
+}
+
+// MARK: - Card B — UP NEXT (the next 2–3 upcoming workouts)
+
+struct UpNextCard: View {
+    let plan: SavedPlan
+    var unit: DistanceUnit = .kilometers
+
+    private var upcoming: [(day: WorkoutDay, date: Date)] { plan.upcomingWorkouts(after: Date(), limit: 3) }
+
+    var body: some View {
+        if !upcoming.isEmpty {
+            VStack(alignment: .leading, spacing: Theme.s3) {
+                SectionHeader(text: "Up next")
+                VStack(alignment: .leading, spacing: Theme.s3) {
+                    ForEach(Array(upcoming.enumerated()), id: \.element.day.id) { i, item in
+                        TodayWorkoutRow(day: item.day,
+                                        dateText: UpNextCard.fmt.string(from: item.date),
+                                        plannedDate: item.date, unit: unit)
+                        if i < upcoming.count - 1 {
+                            Rectangle().fill(Theme.hairline).frame(height: 1)
+                        }
+                    }
                 }
             }
-            Spacer(minLength: Theme.s2)
-            if day.isCompleted {
-                Image(systemName: "checkmark.circle.fill").font(.system(size: 16)).foregroundStyle(Theme.accent)
-            } else {
-                SyncChip(state: day.scheduledDate != nil ? .synced : .notSynced)
-            }
-            Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.ink3)
+            .surfaceCard()
         }
     }
 
-    private var todayWorkout: (weekIndex: Int, day: WorkoutDay)? {
-        let today = Calendar.current.startOfDay(for: Date())
-        for (wi, days) in plan.plan.weeks.enumerated() {
+    static let fmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "EEE d MMM"; return f }()
+}
+
+// MARK: - Plan date helpers
+
+private extension SavedPlan {
+    /// The plan day mapped to a given calendar date (rest or workout), if any.
+    func workout(on date: Date) -> (weekIndex: Int, day: WorkoutDay)? {
+        let target = Calendar.current.startOfDay(for: date)
+        for (wi, days) in plan.weeks.enumerated() {
             for day in days {
-                if let d = plan.date(forWeekIndex: wi, day: day),
-                   Calendar.current.isDate(d, inSameDayAs: today) { return (wi, day) }
+                if let d = self.date(forWeekIndex: wi, day: day),
+                   Calendar.current.isDate(d, inSameDayAs: target) { return (wi, day) }
             }
         }
         return nil
     }
 
-    private var nextWorkout: (day: WorkoutDay, date: Date, label: String)? {
-        let today = Calendar.current.startOfDay(for: Date())
-        var best: (WorkoutDay, Date)?
-        for (wi, days) in plan.plan.weeks.enumerated() {
+    /// The next `limit` non-rest workouts strictly after `date`, in date order.
+    func upcomingWorkouts(after date: Date, limit: Int) -> [(day: WorkoutDay, date: Date)] {
+        let today = Calendar.current.startOfDay(for: date)
+        var result: [(WorkoutDay, Date)] = []
+        for (wi, days) in plan.weeks.enumerated() {
             for day in days where !day.isRestDay {
-                if let d = plan.date(forWeekIndex: wi, day: day), d >= today,
-                   best == nil || d < best!.1 { best = (day, d) }
+                if let d = self.date(forWeekIndex: wi, day: day), d > today { result.append((day, d)) }
             }
         }
-        guard let b = best else { return nil }
-        return (b.0, b.1, TodayWorkoutCard.dayFmt.string(from: b.1))
+        return result.sorted { $0.1 < $1.1 }.prefix(limit).map { (day: $0.0, date: $0.1) }
     }
-
-    static let dayFmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "EEE d MMM"; return f }()
 }
 
 // MARK: - Card B — progress summary

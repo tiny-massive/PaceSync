@@ -186,8 +186,8 @@ struct WorkoutRow: View {
                     Text(day.title)
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(Theme.ink)
-                    if !day.shortMetric(unit: unit).isEmpty {
-                        Text(day.shortMetric(unit: unit))
+                    if !day.distanceLabel(unit: unit).isEmpty {
+                        Text(day.distanceLabel(unit: unit))
                             .font(.system(size: 14))
                             .foregroundStyle(Theme.ink2).psTabular()
                     }
@@ -216,5 +216,34 @@ extension WorkoutDay {
         let secs = segments.compactMap { $0.durationSeconds }.reduce(0, +)
         if secs >= 60 { return "\(secs / 60) min" }
         return ""
+    }
+
+    /// Distance for a compact row: the structured metric, or — for "open" easy/long runs whose
+    /// distance the parser stored only as a range in the notes — a range derived from that text
+    /// ("8–12 miles" → "13–19 km" in the user's unit). Empty when there's no distance to show.
+    func distanceLabel(unit: DistanceUnit) -> String {
+        let metric = shortMetric(unit: unit)
+        if !metric.isEmpty { return metric }
+        if let notes, let range = WorkoutDay.distanceRange(in: notes, unit: unit) { return range }
+        return ""
+    }
+
+    /// Extract a distance RANGE ("8-12 miles", "8 to 12 mi", "12–16 km") from free text and format
+    /// it in the display unit, rounded to whole units. Returns nil when no range is present.
+    static func distanceRange(in text: String, unit: DistanceUnit) -> String? {
+        let pattern = #"(\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(\d+(?:\.\d+)?)\s*(miles|mile|mi|km|k)\b"#
+        guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+        let ns = text as NSString
+        guard let m = re.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
+              m.numberOfRanges == 4 else { return nil }
+        func group(_ i: Int) -> String { ns.substring(with: m.range(at: i)) }
+        guard let a = Double(group(1)), let b = Double(group(2)) else { return nil }
+        let sourceIsKm = group(3).lowercased().hasPrefix("k")
+        let aMiles = sourceIsKm ? a / 1.60934 : a
+        let bMiles = sourceIsKm ? b / 1.60934 : b
+        let lo = Int(round(unit.convert(aMiles)))
+        let hi = Int(round(unit.convert(bMiles)))
+        guard lo > 0, hi > 0 else { return nil }
+        return lo == hi ? "\(lo) \(unit.shortLabel)" : "\(lo)–\(hi) \(unit.shortLabel)"
     }
 }

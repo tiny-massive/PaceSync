@@ -13,7 +13,7 @@ struct RedesignRootView: View {
         TabView(selection: $selection) {
             NavigationStack { TodayView(unit: unit) }
                 .tag(0)
-                .tabItem { Label("Today", systemImage: "figure.run") }
+                .tabItem { Label("Upcoming", systemImage: "figure.run") }
 
             NavigationStack { PlansView(unit: unit) }
                 .tag(1)

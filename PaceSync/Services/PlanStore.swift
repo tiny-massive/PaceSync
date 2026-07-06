@@ -281,6 +281,8 @@ class PlanStore: ObservableObject {
         weeks[0][2].completion = WorkoutCompletion(isDone: true, source: .manual)
         weeks[0][3].scheduledDate = Calendar.current.date(byAdding: .day, value: -10, to: Date())
         weeks[0][5].calendarEventID = "sim-demo-event"
+        // Current-week (week 2) progress so the week strip shows a ticked-off day.
+        weeks[1][0].completion = WorkoutCompletion(isDone: true, source: .manual)
         let active = TrainingPlan(id: UUID(), title: "Half Marathon Plan", weeks: weeks)
         let race = Calendar.current.date(byAdding: .day, value: 18, to: Date()) ?? Date()
         let activeID = UUID()

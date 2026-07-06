@@ -13,9 +13,9 @@ struct TodayView: View {
         ScrollView {
             if let plan = appState.planStore.current {
                 VStack(spacing: Theme.s4) {
+                    PlanOverviewCard(plan: plan, unit: unit)
                     TodayCard(plan: plan, unit: unit)
                     UpNextCard(plan: plan, unit: unit)
-                    ProgressCard(plan: plan, unit: unit)
                 }
                 .padding(.horizontal, Theme.s4)
                 .padding(.top, Theme.s2)
@@ -24,7 +24,7 @@ struct TodayView: View {
             }
         }
         .background(Theme.canvas.ignoresSafeArea())
-        .navigationTitle("Today")
+        .navigationTitle("Upcoming")
         .navigationBarTitleDisplayMode(.large)
         .planChrome()
         .sheet(isPresented: $showAdd) { AddPlanSheet().environmentObject(appState) }
@@ -45,6 +45,83 @@ private struct SurfaceCard: ViewModifier {
     }
 }
 private extension View { func surfaceCard() -> some View { modifier(SurfaceCard()) } }
+
+// MARK: - Top overview — race day + a 7-day week progress strip
+
+struct PlanOverviewCard: View {
+    let plan: SavedPlan
+    var unit: DistanceUnit = .kilometers
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.s3) {
+            HStack(alignment: .firstTextBaseline) {
+                if let race = plan.raceDate {
+                    Text("Race day · \(PlanOverviewCard.fmt.string(from: race))")
+                        .font(.psCallout).foregroundStyle(Theme.ink2)
+                } else {
+                    Text("\(plan.plan.weeks.count)-week plan")
+                        .font(.psCallout).foregroundStyle(Theme.ink2)
+                }
+                Spacer()
+                if let d = daysToRace, d >= 0 {
+                    Text("\(d) days").font(.psCallout).foregroundStyle(Theme.ink3)
+                }
+            }
+            if let week = plan.currentWeekIndex {
+                Text("Week \(week + 1) of \(plan.plan.weeks.count)")
+                    .font(.psHeadline).foregroundStyle(Theme.ink)
+                WeekStrip(plan: plan, weekIndex: week)
+                    .padding(.top, 2)
+            }
+        }
+        .surfaceCard()
+    }
+
+    private var daysToRace: Int? {
+        guard let race = plan.raceDate else { return nil }
+        let today = Calendar.current.startOfDay(for: Date())
+        return Calendar.current.dateComponents([.day], from: today,
+                                               to: Calendar.current.startOfDay(for: race)).day
+    }
+    static let fmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "EEE d MMM"; return f }()
+}
+
+// MARK: - 7-day week strip (which days you've ticked off this week; today is ringed)
+
+struct WeekStrip: View {
+    let plan: SavedPlan
+    let weekIndex: Int
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(plan.plan.weeks[weekIndex]) { day in
+                VStack(spacing: 5) {
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(fill(day))
+                        .frame(height: 6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                .strokeBorder(isToday(day) ? Theme.accent : .clear, lineWidth: 1.5)
+                        )
+                    Text(String(day.dayOfWeek.short.prefix(1)))
+                        .font(.psLabel)
+                        .foregroundStyle(isToday(day) ? Theme.ink : Theme.ink3)
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    private func fill(_ day: WorkoutDay) -> Color {
+        if day.isCompleted { return Theme.accent }         // ticked off
+        if day.isRestDay   { return Theme.hairline }        // rest — barely there
+        return Theme.ink3.opacity(0.25)                     // a workout, not done yet
+    }
+    private func isToday(_ day: WorkoutDay) -> Bool {
+        guard let d = plan.date(forWeekIndex: weekIndex, day: day) else { return false }
+        return Calendar.current.isDate(d, inSameDayAs: Date())
+    }
+}
 
 // MARK: - Shared workout row — date + sync ABOVE the title, then title + distance. Tappable.
 

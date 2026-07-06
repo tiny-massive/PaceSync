@@ -25,7 +25,9 @@ enum SyncState: Equatable {
 struct CategoryDot: View {
     let category: Theme.Category
     var size: CGFloat = 9
-    var body: some View { Circle().fill(category.color).frame(width: size, height: size) }
+    // Type colours removed for now (to be reassigned later) — single neutral dot.
+    // The category→colour map in Theme.Category is preserved for when we bring them back.
+    var body: some View { Circle().fill(Theme.ink3).frame(width: size, height: size) }
 }
 
 // MARK: - Completion checkbox (trailing) — native centred checkmark, no alignment hacks

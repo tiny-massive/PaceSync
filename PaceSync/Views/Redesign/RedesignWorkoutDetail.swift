@@ -148,7 +148,7 @@ struct RedesignWorkoutDetail: View {
                             .font(.psCallout).foregroundStyle(Theme.ink2)
                     }
                     .padding(.horizontal, Theme.s4)
-                    .padding(.vertical, Theme.s3)
+                    .padding(.vertical, Theme.s4)
                     if i < d.segments.count - 1 {
                         Rectangle().fill(Theme.hairline).frame(height: 1)
                             .padding(.leading, Theme.s4)

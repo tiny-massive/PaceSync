@@ -135,7 +135,7 @@ struct AddPlanSheet: View {
             } label: {
                 Text("Import Plan").frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent).tint(Theme.accent)
+            .buttonStyle(.borderedProminent).tint(Theme.accent).controlSize(.large)
             .disabled(!hasPlanContent || appState.isLoading)
         } header: { Text("Import a plan") }
     }
@@ -172,9 +172,9 @@ struct AddPlanSheet: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent).tint(Theme.accent)
+            .buttonStyle(.borderedProminent).tint(Theme.accent).controlSize(.large)
             .disabled(workoutText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || appState.isBuildingWorkout)
-        } header: { Text("Just one workout") }
+        } header: { Text("Single custom workout") }
     }
 
     // MARK: Progress overlay (full-plan import only)

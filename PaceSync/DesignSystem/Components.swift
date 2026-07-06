@@ -199,7 +199,8 @@ struct WorkoutRow: View {
                     CompletionCheckbox(isDone: isDone)
                 }
             }
-            .padding(Theme.s4)
+            .padding(.horizontal, Theme.s4)
+            .padding(.vertical, Theme.s5)
         }
     }
 }
@@ -233,8 +234,18 @@ extension WorkoutDay {
         }
         if miles > 0 { return "~\(Int(ceil(unit.convert(miles)))) \(unit.shortLabel)" }
         if let notes, let range = WorkoutDay.distanceRange(in: notes, unit: unit) { return range }
-        let secs = segments.compactMap { $0.durationSeconds }.reduce(0, +)
-        if secs >= 60 { return "\(secs / 60) min" }
+        // A duration total is only meaningful for a genuinely time-based session. If the workout
+        // has an OPEN run (an easy/tempo/hill leg with no distance and no duration — its mileage
+        // was left open), summing the interval durations is misleading ("7 min" on a long run) —
+        // so show nothing rather than a wrong number.
+        let hasOpenRun = segments.contains { seg in
+            [.easy, .tempo, .hills].contains(seg.type)
+                && seg.distanceMiles == nil && seg.distanceMeters == nil && (seg.durationSeconds ?? 0) == 0
+        }
+        if !hasOpenRun {
+            let secs = segments.compactMap { $0.durationSeconds }.reduce(0, +)
+            if secs >= 60 { return "\(secs / 60) min" }
+        }
         return ""
     }
 

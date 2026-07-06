@@ -6,8 +6,24 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		AA0000000000000000000002 /* PaceSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000001 /* PaceSyncTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AA0000000000000000000009 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 838245742F630672009B1E5C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8382457B2F630672009B1E5C;
+			remoteInfo = PaceSync;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		8382457C2F630672009B1E5C /* PaceSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PaceSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000000000000000000001 /* PaceSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaceSyncTests.swift; sourceTree = "<group>"; };
+		AA0000000000000000000003 /* PaceSyncTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PaceSyncTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -26,6 +42,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0000000000000000000006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -33,6 +56,7 @@
 			isa = PBXGroup;
 			children = (
 				8382457E2F630672009B1E5C /* PaceSync */,
+				AA0000000000000000000004 /* PaceSyncTests */,
 				8382457D2F630672009B1E5C /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,8 +65,17 @@
 			isa = PBXGroup;
 			children = (
 				8382457C2F630672009B1E5C /* PaceSync.app */,
+				AA0000000000000000000003 /* PaceSyncTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000004 /* PaceSyncTests */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000001 /* PaceSyncTests.swift */,
+			);
+			path = PaceSyncTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -70,6 +103,26 @@
 			productReference = 8382457C2F630672009B1E5C /* PaceSync.app */;
 			productType = "com.apple.product-type.application";
 		};
+		AA0000000000000000000008 /* PaceSyncTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA000000000000000000000B /* Build configuration list for PBXNativeTarget "PaceSyncTests" */;
+			buildPhases = (
+				AA0000000000000000000005 /* Sources */,
+				AA0000000000000000000006 /* Frameworks */,
+				AA0000000000000000000007 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA000000000000000000000A /* PBXTargetDependency */,
+			);
+			name = PaceSyncTests;
+			packageProductDependencies = (
+			);
+			productName = PaceSyncTests;
+			productReference = AA0000000000000000000003 /* PaceSyncTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -82,6 +135,10 @@
 				TargetAttributes = {
 					8382457B2F630672009B1E5C = {
 						CreatedOnToolsVersion = 26.3;
+					};
+					AA0000000000000000000008 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = 8382457B2F630672009B1E5C;
 					};
 				};
 			};
@@ -100,12 +157,20 @@
 			projectRoot = "";
 			targets = (
 				8382457B2F630672009B1E5C /* PaceSync */,
+				AA0000000000000000000008 /* PaceSyncTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		8382457A2F630672009B1E5C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0000000000000000000007 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -122,7 +187,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0000000000000000000005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0000000000000000000002 /* PaceSyncTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AA000000000000000000000A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8382457B2F630672009B1E5C /* PaceSync */;
+			targetProxy = AA0000000000000000000009 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		838245872F630674009B1E5C /* Debug */ = {
@@ -322,6 +403,48 @@
 			};
 			name = Release;
 		};
+		AA000000000000000000000C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2Z7F922CV2;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = studio.schoolwork.pacesync.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PaceSync.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PaceSync";
+			};
+			name = Debug;
+		};
+		AA000000000000000000000D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2Z7F922CV2;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = studio.schoolwork.pacesync.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PaceSync.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PaceSync";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -339,6 +462,15 @@
 			buildConfigurations = (
 				8382458A2F630674009B1E5C /* Debug */,
 				8382458B2F630674009B1E5C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA000000000000000000000B /* Build configuration list for PBXNativeTarget "PaceSyncTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA000000000000000000000C /* Debug */,
+				AA000000000000000000000D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

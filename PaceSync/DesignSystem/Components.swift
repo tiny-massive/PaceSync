@@ -227,7 +227,8 @@ extension WorkoutDay {
     /// the notes for "open" easy/long runs ("8–12 miles" → "13–19 km"), then to duration.
     func distanceLabel(unit: DistanceUnit) -> String {
         let miles = segments.reduce(0.0) { sum, seg in
-            sum + (seg.distanceMiles ?? 0) + (seg.distanceMeters.map { $0 / 1609.34 } ?? 0)
+            let per = (seg.distanceMiles ?? 0) + (seg.distanceMeters.map { $0 / 1609.34 } ?? 0)
+            return sum + per * Double(max(1, seg.reps ?? 1))   // count interval reps toward the total
         }
         if miles > 0 { return unit.format(miles) }
         if let notes, let range = WorkoutDay.distanceRange(in: notes, unit: unit) { return range }

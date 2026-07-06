@@ -12,12 +12,14 @@ enum ImportError: LocalizedError {
     case unsupportedFormat(String)
     case fileUnreadable
     case emptyContent
+    case notAWorkout
 
     var errorDescription: String? {
         switch self {
         case .unsupportedFormat(let ext): return "'\(ext)' files are not supported yet."
         case .fileUnreadable:             return "Could not read the file."
         case .emptyContent:               return "The file appears to be empty."
+        case .notAWorkout:                return "That doesn't look like a workout."
         }
     }
 }

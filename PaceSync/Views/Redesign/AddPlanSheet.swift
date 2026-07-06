@@ -11,109 +11,174 @@ struct AddPlanSheet: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) private var dismiss
 
-    @State private var text = ""
-    @State private var raceDate: Date? = nil               // unset until the user chooses (no silent default)
-    @State private var attachedFileURL: URL?               // attached, NOT parsed until Create
-    @State private var showFileImporter = false
-    @State private var showDatePicker = false
+    // Race day
+    @State private var raceDate: Date? = nil               // unset until chosen (skippable)
     @State private var pickerDate = AddPlanSheet.defaultRaceDay()
+    @State private var showDatePicker = false
+    @State private var showRaceSkip = false
+    @State private var importAfterRaceDay = false
+    // Import a plan
+    @State private var planText = ""
+    @State private var attachedFileURL: URL?               // attached, NOT parsed until Import
+    @State private var showFileImporter = false
+    @State private var showPasteField = false
+    // One-off workout
+    @State private var workoutText = ""
+    @State private var workoutDate = Calendar.current.startOfDay(for: Date())
 
     private var hasPlanContent: Bool {
-        attachedFileURL != nil || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        attachedFileURL != nil || !planText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
-    private var canCreate: Bool { raceDate != nil && hasPlanContent }
 
     var body: some View {
         NavigationStack {
             Form {
-                // 1) Race day — the anchor every workout is dated from, so it comes first.
-                Section {
-                    if let raceDate {
-                        Button {
-                            pickerDate = raceDate; showDatePicker = true
-                        } label: {
-                            VStack(alignment: .leading, spacing: 3) {
-                                HStack {
-                                    Text("Race day").foregroundStyle(Theme.ink)
-                                    Spacer()
-                                    Text(AddPlanSheet.fmt.string(from: raceDate)).foregroundStyle(Theme.accent)
-                                }
-                                Text(weeksCaption(raceDate)).font(.psCaption).foregroundStyle(Theme.ink3)
-                            }
-                        }
-                        .tint(Theme.ink)
-                    } else {
-                        Button {
-                            pickerDate = AddPlanSheet.defaultRaceDay(); showDatePicker = true
-                        } label: {
-                            Label("Set race day", systemImage: "calendar.badge.plus")
-                        }
-                        .tint(Theme.accent)
-                    }
-                } header: { Text("Race day") } footer: {
-                    Text("Every workout is dated by counting back from race day, so set it first.")
-                }
-
-                // 2) The plan — upload a file OR paste text (last action wins).
-                Section {
-                    Text("Add the plan you're following. PaceSync reads it and turns every workout into a dated session on your Apple Watch and calendar.")
-                        .font(.psCallout).foregroundStyle(Theme.ink2)
-
-                    if let url = attachedFileURL {
-                        HStack(spacing: Theme.s2) {
-                            Label(url.lastPathComponent, systemImage: "doc")
-                                .lineLimit(1).truncationMode(.middle).foregroundStyle(Theme.ink)
-                            Spacer()
-                            Button { attachedFileURL = nil } label: {
-                                Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.ink3)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Remove file")
-                        }
-                    } else {
-                        Button { showFileImporter = true } label: {
-                            Label("Choose a PDF or text file", systemImage: "doc.badge.plus")
-                        }
-                        .tint(Theme.accent)
-
-                        HStack(spacing: Theme.s2) {
-                            Rectangle().fill(Theme.hairline).frame(height: 1)
-                            Text("or").font(.psCaption).foregroundStyle(Theme.ink3)
-                            Rectangle().fill(Theme.hairline).frame(height: 1)
-                        }
-                        .padding(.vertical, 2)
-
-                        TextField("Paste your plan here…", text: $text, axis: .vertical)
-                            .lineLimit(6...12)
-                    }
-                } header: { Text("Your plan") }
+                raceDaySection
+                importPlanSection
+                oneOffSection
             }
-            .navigationTitle("New Plan")
+            .navigationTitle("Add Training")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") { Task { await create() } }.disabled(!canCreate)
-                }
             }
             .sheet(isPresented: $showDatePicker) {
-                RaceDaySheet(date: $pickerDate) { raceDate = pickerDate }
+                RaceDaySheet(date: $pickerDate) {
+                    raceDate = pickerDate
+                    if importAfterRaceDay { importAfterRaceDay = false; Task { await runImport() } }
+                }
             }
             .fileImporter(isPresented: $showFileImporter,
-                          allowedContentTypes: [.pdf, .plainText, .text],
-                          allowsMultipleSelection: false) { result in
-                // Attach ONLY — copy into temp now while we hold access; parse on Create.
+                          allowedContentTypes: planFileTypes, allowsMultipleSelection: false) { result in
+                // Attach ONLY — copy into temp now while we hold access; parse on Import.
                 if case .success(let urls) = result, let url = urls.first {
-                    attachedFileURL = copyToTemp(url)
+                    attachedFileURL = copyToTemp(url); showPasteField = false
                 }
             }
             .overlay { if appState.isLoading { progress } }
-            .interactiveDismissDisabled(appState.isLoading)
+            .interactiveDismissDisabled(appState.isLoading || appState.isBuildingWorkout)
+            .onChange(of: workoutText) { _, _ in appState.workoutBuildError = nil }
+            .alert("No race day set", isPresented: $showRaceSkip) {
+                Button("Add Race Day") {
+                    importAfterRaceDay = true; pickerDate = AddPlanSheet.defaultRaceDay(); showDatePicker = true
+                }
+                Button("Skip for Now") { Task { await runImport() } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Your workouts won't have dates until you set one. You can add it any time from the plan's menu.")
+            }
             .alert("Couldn't add plan", isPresented: errorBinding(appState)) {
                 Button("OK") {}
             } message: { Text(appState.errorMessage ?? "") }
         }
     }
+
+    // MARK: Section 1 — Race day
+
+    @ViewBuilder private var raceDaySection: some View {
+        Section {
+            if let raceDate {
+                Button { pickerDate = raceDate; showDatePicker = true } label: {
+                    HStack {
+                        Text("Race day").foregroundStyle(Theme.ink)
+                        Spacer()
+                        Text(AddPlanSheet.fmt.string(from: raceDate)).foregroundStyle(Theme.accent)
+                    }
+                }
+                .tint(Theme.ink)
+            } else {
+                Button { pickerDate = AddPlanSheet.defaultRaceDay(); showDatePicker = true } label: {
+                    Label("Set race day", systemImage: "calendar.badge.plus")
+                }
+                .tint(Theme.accent)
+            }
+        } header: { Text("Race day") } footer: {
+            Text("PaceSync dates every workout by counting back from race day. You can skip this and add it later.")
+        }
+    }
+
+    // MARK: Section 2 — Import a plan
+
+    @ViewBuilder private var importPlanSection: some View {
+        Section {
+            Text("Upload your full training plan — PDF, Markdown (.md), or plain text (.txt). A file with a clear week-by-week layout parses best.")
+                .font(.psCallout).foregroundStyle(Theme.ink2)
+
+            if let url = attachedFileURL {
+                HStack(spacing: Theme.s2) {
+                    Label(url.lastPathComponent, systemImage: "doc")
+                        .lineLimit(1).truncationMode(.middle).foregroundStyle(Theme.ink)
+                    Spacer()
+                    Button { attachedFileURL = nil } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.ink3)
+                    }
+                    .buttonStyle(.plain).accessibilityLabel("Remove file")
+                }
+            } else {
+                Button { showFileImporter = true } label: {
+                    Label("Choose File", systemImage: "doc.badge.plus")
+                }
+                .tint(Theme.accent)
+
+                if showPasteField {
+                    TextField("Paste your whole plan here…", text: $planText, axis: .vertical)
+                        .lineLimit(6...12)
+                } else {
+                    Button { showPasteField = true } label: {
+                        Text("Paste plan text instead").font(.psCaption)
+                    }
+                    .tint(Theme.ink3)
+                }
+            }
+
+            Button {
+                if raceDate == nil { showRaceSkip = true } else { Task { await runImport() } }
+            } label: {
+                Text("Import Plan").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).tint(Theme.accent)
+            .disabled(!hasPlanContent || appState.isLoading)
+        } header: { Text("Import a plan") }
+    }
+
+    // MARK: Section 3 — One-off workout
+
+    @ViewBuilder private var oneOffSection: some View {
+        Section {
+            Text("Not importing a whole plan? Describe a single workout and PaceSync will build it, ready for your Apple Watch.")
+                .font(.psCallout).foregroundStyle(Theme.ink2)
+
+            TextField("3K warm-up, then 3×10min threshold, 2K cool-down", text: $workoutText, axis: .vertical)
+                .lineLimit(3...8)
+            DatePicker("Workout date", selection: $workoutDate,
+                       in: Calendar.current.startOfDay(for: Date())..., displayedComponents: .date)
+
+            if let e = appState.workoutBuildError {
+                Label(e, systemImage: "exclamationmark.triangle")
+                    .font(.psCaption).foregroundStyle(Theme.error)
+            }
+
+            Button {
+                Task {
+                    if await appState.createStandaloneWorkout(text: workoutText, on: workoutDate) { dismiss() }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if appState.isBuildingWorkout {
+                        ProgressView().controlSize(.small)
+                        Text("Building your workout…")
+                    } else {
+                        Text("Create Workout")
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).tint(Theme.accent)
+            .disabled(workoutText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || appState.isBuildingWorkout)
+        } header: { Text("Just one workout") }
+    }
+
+    // MARK: Progress overlay (full-plan import only)
 
     private var progress: some View {
         ZStack {
@@ -135,19 +200,24 @@ struct AddPlanSheet: View {
 
     // MARK: Actions
 
-    private func create() async {
-        guard let raceDate else { return }
+    private func runImport() async {
         if let url = attachedFileURL {
             await appState.importFile(from: url, raceDate: raceDate)
         } else {
-            await appState.importText(text, title: "Plan · \(AddPlanSheet.shortFmt.string(from: raceDate))",
-                                      raceDate: raceDate)
+            let title = raceDate.map { "Plan · \(AddPlanSheet.shortFmt.string(from: $0))" } ?? "Training Plan"
+            await appState.importText(planText, title: title, raceDate: raceDate)
         }
         if appState.errorMessage == nil { dismiss() }
     }
 
-    /// Copy a security-scoped picked file into our temp dir immediately, so we can parse it later
-    /// on Create without the scoped access having expired. Returns the temp URL (or the original).
+    private var planFileTypes: [UTType] {
+        var types: [UTType] = [.pdf, .plainText, .text]
+        if let md = UTType(filenameExtension: "md") { types.append(md) }
+        return types
+    }
+
+    /// Copy a security-scoped picked file into temp now (while access is held) so it can be parsed
+    /// later on Import. Returns the temp URL (or the original on failure).
     private func copyToTemp(_ url: URL) -> URL {
         let accessed = url.startAccessingSecurityScopedResource()
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
@@ -155,15 +225,6 @@ struct AddPlanSheet: View {
         try? FileManager.default.removeItem(at: dest)
         do { try FileManager.default.copyItem(at: url, to: dest); return dest }
         catch { return url }
-    }
-
-    private func weeksCaption(_ date: Date) -> String {
-        let days = Calendar.current.dateComponents([.day],
-                    from: Calendar.current.startOfDay(for: Date()),
-                    to: Calendar.current.startOfDay(for: date)).day ?? 0
-        let weeks = max(0, days) / 7
-        if weeks == 0 { return "This week" }
-        return "\(weeks) week\(weeks == 1 ? "" : "s") from today"
     }
 
     /// ~12 weeks out, snapped forward to the next Sunday (races are almost always weekends).

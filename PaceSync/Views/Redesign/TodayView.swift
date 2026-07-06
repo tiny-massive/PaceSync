@@ -11,17 +11,19 @@ struct TodayView: View {
 
     var body: some View {
         ScrollView {
-            if let plan = appState.planStore.current {
-                VStack(spacing: Theme.s4) {
+            VStack(spacing: Theme.s4) {
+                if let plan = appState.planStore.current {
                     PlanOverviewCard(plan: plan, unit: unit)
                     TodayCard(plan: plan, unit: unit)
                     UpNextCard(plan: plan, unit: unit)
                 }
-                .padding(.horizontal, Theme.s4)
-                .padding(.top, Theme.s2)
-            } else {
-                EmptyPlanState(onAdd: { showAdd = true }).padding(.top, 80)
+                OneOffCard(unit: unit)
+                if appState.planStore.current == nil && appState.planStore.standaloneWorkouts.isEmpty {
+                    EmptyPlanState(onAdd: { showAdd = true }).padding(.top, 60)
+                }
             }
+            .padding(.horizontal, Theme.s4)
+            .padding(.top, Theme.s2)
         }
         .background(Theme.canvas.ignoresSafeArea())
         .navigationTitle("Home")
@@ -130,13 +132,15 @@ struct TodayWorkoutRow: View {
     let dateText: String
     var plannedDate: Date?
     var unit: DistanceUnit = .kilometers
+    var standaloneID: UUID? = nil
 
     private var dist: String { day.distanceLabel(unit: unit) }
     private var syncState: SyncState { day.scheduledDate != nil ? .synced : .notSynced }
 
     var body: some View {
         NavigationLink {
-            RedesignWorkoutDetail(day: day, unit: unit, dateText: dateText, plannedDate: plannedDate)
+            RedesignWorkoutDetail(day: day, unit: unit, dateText: dateText,
+                                  plannedDate: plannedDate, standaloneID: standaloneID)
         } label: {
             VStack(alignment: .leading, spacing: Theme.s2) {
                 header
@@ -226,6 +230,41 @@ struct UpNextCard: View {
                                         dateText: UpNextCard.fmt.string(from: item.date),
                                         plannedDate: item.date, unit: unit)
                         if i < upcoming.count - 1 {
+                            Rectangle().fill(Theme.hairline).frame(height: 1)
+                        }
+                    }
+                }
+            }
+            .surfaceCard()
+        }
+    }
+
+    static let fmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "EEE d MMM"; return f }()
+}
+
+// MARK: - One-off workouts (standalone, dated individually)
+
+struct OneOffCard: View {
+    @EnvironmentObject var appState: AppState
+    var unit: DistanceUnit = .kilometers
+
+    private var workouts: [StandaloneWorkout] {
+        let today = Calendar.current.startOfDay(for: Date())
+        return appState.planStore.standaloneWorkouts
+            .filter { $0.date >= today }
+            .sorted { $0.date < $1.date }
+    }
+
+    var body: some View {
+        if !workouts.isEmpty {
+            VStack(alignment: .leading, spacing: Theme.s3) {
+                SectionHeader(text: "One-off workouts")
+                VStack(alignment: .leading, spacing: Theme.s3) {
+                    ForEach(Array(workouts.enumerated()), id: \.element.id) { i, sw in
+                        TodayWorkoutRow(day: sw.day,
+                                        dateText: OneOffCard.fmt.string(from: sw.date),
+                                        plannedDate: sw.date, unit: unit, standaloneID: sw.id)
+                        if i < workouts.count - 1 {
                             Rectangle().fill(Theme.hairline).frame(height: 1)
                         }
                     }

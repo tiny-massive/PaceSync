@@ -19,6 +19,10 @@ class AppState: ObservableObject {
     /// Human-readable phase label shown under the progress bar.
     @Published var parsingPhase: String = ""
 
+    /// One-off workout build (separate from the full-plan import overlay).
+    @Published var isBuildingWorkout = false
+    @Published var workoutBuildError: String?
+
     let planStore = PlanStore.shared
     private let parser = ClaudeParserService()
 
@@ -163,6 +167,78 @@ class AppState: ObservableObject {
 
     func resetScheduleStatus(for day: WorkoutDay) {
         scheduleStatuses[day.id] = .unscheduled
+    }
+
+    // MARK: - One-off (standalone) workout
+
+    /// Parse a text description into a single dated standalone workout. Returns false (with
+    /// workoutBuildError set) if it isn't a workout or the parse fails. Uses its OWN loading flag
+    /// so the full-screen plan-import overlay never appears.
+    func createStandaloneWorkout(text: String, on date: Date) async -> Bool {
+        isBuildingWorkout = true
+        workoutBuildError = nil
+        defer { isBuildingWorkout = false }
+        do {
+            let (title, segments) = try await parser.parseSingleWorkout(from: text)
+            let start = Calendar.current.startOfDay(for: date)
+            let day = WorkoutDay(id: UUID(), week: 1, dayOfWeek: Self.dayOfWeek(from: start),
+                                 title: title,
+                                 notes: text.trimmingCharacters(in: .whitespacesAndNewlines),
+                                 segments: segments)
+            planStore.addStandalone(StandaloneWorkout(date: start, day: day, dateAdded: Date()))
+            return true
+        } catch ImportError.notAWorkout {
+            workoutBuildError = "That doesn't look like a workout. Try something like “3K warm-up, 3×10min threshold, 2K cool-down.”"
+            return false
+        } catch {
+            workoutBuildError = "Couldn't build your workout. Check your connection and try again."
+            return false
+        }
+    }
+
+    func setStandaloneCompletion(_ id: UUID, done: Bool) {
+        planStore.mutateStandalone(id) {
+            $0.completion = WorkoutCompletion(isDone: done, source: .manual)
+        }
+    }
+
+    /// Remove a one-off workout and clean up its calendar event.
+    func removeStandalone(_ id: UUID) {
+        if let sw = planStore.standaloneWorkouts.first(where: { $0.id == id }),
+           let eid = sw.day.calendarEventID {
+            EventKitService.shared.remove(eid)
+        }
+        planStore.removeStandalone(id)
+    }
+
+    /// Schedule a standalone workout to the Watch, persisting its sync date on the standalone store.
+    func scheduleStandalone(_ id: UUID, day: WorkoutDay, on date: Date) async {
+        scheduleStatuses[day.id] = .scheduling
+        do {
+            try await WorkoutKitService.shared.schedule(day, on: date)
+            let confirmed = await WorkoutKitService.shared.isScheduled(day)
+            if confirmed {
+                scheduleStatuses[day.id] = .scheduled
+                scheduledDates[day.id] = date
+                planStore.mutateStandalone(id) { $0.scheduledDate = date }
+            } else {
+                scheduleStatuses[day.id] = .failed("Sync could not be verified — check your Watch.")
+            }
+        } catch {
+            scheduleStatuses[day.id] = .failed(error.localizedDescription)
+        }
+    }
+
+    private static func dayOfWeek(from date: Date) -> DayOfWeek {
+        switch Calendar.current.component(.weekday, from: date) {
+        case 2:  return .monday
+        case 3:  return .tuesday
+        case 4:  return .wednesday
+        case 5:  return .thursday
+        case 6:  return .friday
+        case 7:  return .saturday
+        default: return .sunday
+        }
     }
 
     // MARK: - Completion auto-match (HealthKit)

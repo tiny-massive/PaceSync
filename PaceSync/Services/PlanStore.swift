@@ -14,6 +14,8 @@ class PlanStore: ObservableObject {
     @Published var plans: [SavedPlan] = []
     /// The active plan's id (nil = none active).
     @Published var activePlanID: UUID?
+    /// One-off workouts not attached to any plan (described in text, dated individually).
+    @Published var standaloneWorkouts: [StandaloneWorkout] = []
 
     /// The active plan. Reads/writes the entry in `plans`, so all existing code is unchanged.
     var current: SavedPlan? {
@@ -30,19 +32,53 @@ class PlanStore: ObservableObject {
     private let storeURL: URL     // plans.json (library)
     private let legacyURL: URL    // savedplan.json (pre-library, migrated on first launch)
     private let sourcesDir: URL
+    private let standaloneURL: URL   // standalone.json (one-off workouts)
     private let activeKey = "pacesync.activePlanID"
     private let backupKey = "pacesync.plansBackup"   // durable second copy (survives a file loss)
 
     init() {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        storeURL   = docs.appendingPathComponent("plans.json")
-        legacyURL  = docs.appendingPathComponent("savedplan.json")
-        sourcesDir = docs.appendingPathComponent("Plans", isDirectory: true)
+        storeURL      = docs.appendingPathComponent("plans.json")
+        legacyURL     = docs.appendingPathComponent("savedplan.json")
+        standaloneURL = docs.appendingPathComponent("standalone.json")
+        sourcesDir    = docs.appendingPathComponent("Plans", isDirectory: true)
         try? FileManager.default.createDirectory(at: sourcesDir, withIntermediateDirectories: true)
         load()
+        loadStandalone()
         #if targetEnvironment(simulator)
         if plans.isEmpty { seedSampleForSimulator() }
         #endif
+    }
+
+    // MARK: - Standalone (one-off) workouts
+
+    func addStandalone(_ workout: StandaloneWorkout) {
+        standaloneWorkouts.append(workout)
+        standaloneWorkouts.sort { $0.date < $1.date }
+        persistStandalone()
+    }
+
+    func removeStandalone(_ id: UUID) {
+        standaloneWorkouts.removeAll { $0.id == id }
+        persistStandalone()
+    }
+
+    /// Mutate the WorkoutDay of a standalone workout by id (completion / sync / calendar).
+    func mutateStandalone(_ id: UUID, _ transform: (inout WorkoutDay) -> Void) {
+        guard let i = standaloneWorkouts.firstIndex(where: { $0.id == id }) else { return }
+        transform(&standaloneWorkouts[i].day)
+        persistStandalone()
+    }
+
+    private func persistStandalone() {
+        try? JSONEncoder().encode(standaloneWorkouts).write(to: standaloneURL, options: .atomic)
+    }
+
+    private func loadStandalone() {
+        if let data = try? Data(contentsOf: standaloneURL),
+           let decoded = try? JSONDecoder().decode([StandaloneWorkout].self, from: data) {
+            standaloneWorkouts = decoded
+        }
     }
 
     // MARK: - Save (new plan → added to the library and activated)
@@ -365,6 +401,19 @@ class PlanStore: ObservableObject {
         ]
         activePlanID = activeID
         persist()
+
+        // A sample one-off workout so the "One-off workouts" card isn't empty in the sim.
+        let tempo = WorkoutSegment(id: UUID(), type: .tempo, durationSeconds: 600, distanceMiles: nil,
+                                   distanceMeters: nil, reps: 3, restDurationSeconds: nil,
+                                   effort: .threshold, setIndex: nil)
+        let oneOff = StandaloneWorkout(
+            date: Calendar.current.date(byAdding: .day, value: 2, to: Calendar.current.startOfDay(for: Date())) ?? Date(),
+            day: WorkoutDay(id: UUID(), week: 1, dayOfWeek: .friday, title: "Threshold session",
+                            notes: "3K warm-up, then 3 × 10 min threshold, 2K cool-down",
+                            segments: [s(.warmup, m: 3000), tempo, s(.cooldown, m: 2000)]),
+            dateAdded: Date())
+        standaloneWorkouts = [oneOff]
+        persistStandalone()
     }
     #endif
 }

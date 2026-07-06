@@ -11,13 +11,19 @@ struct RedesignWorkoutDetail: View {
     var dateText: String = ""
     /// The workout's real calendar date, used when scheduling to Watch.
     var plannedDate: Date? = nil
+    /// Set when this is a one-off standalone workout, so completion/sync route to that store.
+    var standaloneID: UUID? = nil
 
     @EnvironmentObject var appState: AppState
+    @Environment(\.dismiss) private var dismiss
     @State private var showEdit = false
 
     /// Live copy from the store so content + completion + schedule reflect writes immediately.
     private var d: WorkoutDay {
-        appState.planStore.current?.plan.allDays.first { $0.id == day.id } ?? day
+        if let sid = standaloneID {
+            return appState.planStore.standaloneWorkouts.first { $0.id == sid }?.day ?? day
+        }
+        return appState.planStore.current?.plan.allDays.first { $0.id == day.id } ?? day
     }
     private var status: ScheduleStatus? { appState.scheduleStatuses[day.id] }
     private var isOnWatch: Bool {
@@ -35,7 +41,14 @@ struct RedesignWorkoutDetail: View {
                    !notes.isEmpty {
                     fromPlanCard(notes)
                 }
-                if !d.isRestDay {
+                if let sid = standaloneID {
+                    Button(role: .destructive) {
+                        appState.removeStandalone(sid); dismiss()
+                    } label: {
+                        Label("Remove workout", systemImage: "trash").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(PSSecondaryButtonStyle())
+                } else if !d.isRestDay {
                     Button { showEdit = true } label: {
                         Label("Edit workout", systemImage: "pencil")
                     }
@@ -163,7 +176,9 @@ struct RedesignWorkoutDetail: View {
     // MARK: Actions
 
     private func toggleDone() {
-        if d.isCompleted {
+        if let sid = standaloneID {
+            appState.setStandaloneCompletion(sid, done: !d.isCompleted)
+        } else if d.isCompleted {
             // Write a manual "not done" tombstone (not nil) so HealthKit auto-match can't
             // silently re-complete a run the user deliberately un-marked.
             appState.planStore.setCompletion(dayID: day.id,
@@ -176,7 +191,11 @@ struct RedesignWorkoutDetail: View {
 
     private func sync() {
         guard let date = plannedDate else { return }
-        Task { await appState.scheduleWorkout(d, on: date) }
+        if let sid = standaloneID {
+            Task { await appState.scheduleStandalone(sid, day: d, on: date) }
+        } else {
+            Task { await appState.scheduleWorkout(d, on: date) }
+        }
     }
 
     // MARK: Helpers

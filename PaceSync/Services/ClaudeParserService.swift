@@ -262,6 +262,40 @@ class ClaudeParserService {
         }
     }
 
+    // MARK: - Single one-off workout
+
+    /// Parse a free-text description of ONE workout into (title, segments). Guards off-topic input
+    /// with a cheap client heuristic FIRST (no API call), then treats an empty parse as not-a-workout.
+    func parseSingleWorkout(from text: String) async throws -> (title: String, segments: [WorkoutSegment]) {
+        guard containsWorkoutSignals(text) else { throw ImportError.notAWorkout }
+        let segments = try await parseSegments(from: text)
+        guard !segments.isEmpty else { throw ImportError.notAWorkout }
+        return (deriveWorkoutTitle(from: segments), segments)
+    }
+
+    /// Cheap heuristic: needs ≥2 running signals, so "what phase of the moon are we in" is
+    /// rejected before we ever call the API.
+    private func containsWorkoutSignals(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        let terms = ["km", "mile", "easy", "tempo", "threshold", "interval", "warm", "cool",
+                     "jog", "run", "rest", "rep", "pace", "5k", "10k", "marathon", "hill",
+                     "stride", "recovery", "effort", "fartlek", "sprint", "zone"]
+        var hits = terms.reduce(0) { $0 + (lower.contains($1) ? 1 : 0) }
+        if lower.range(of: #"\d\s*(k|km|mi|min|m)\b"#, options: .regularExpression) != nil { hits += 1 }
+        if lower.range(of: #"\d+\s*[x×]\s*\d"#, options: .regularExpression) != nil { hits += 1 }
+        return hits >= 2
+    }
+
+    private func deriveWorkoutTitle(from segments: [WorkoutSegment]) -> String {
+        let types = Set(segments.map { $0.type })
+        if types.contains(.interval) { return "Intervals" }
+        if types.contains(.tempo)    { return "Tempo run" }
+        if types.contains(.hills)    { return "Hill session" }
+        let miles = segments.compactMap { $0.distanceMiles }.reduce(0, +)
+            + segments.compactMap { $0.distanceMeters }.reduce(0, +) / 1609.34
+        return miles >= 10 ? "Long run" : "Workout"
+    }
+
     // MARK: - Helpers
 
     private nonisolated func makeWorkoutDay(from dto: DayStructureDTO, segments: [WorkoutSegment]) -> WorkoutDay {

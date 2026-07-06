@@ -250,8 +250,10 @@ struct OneOffCard: View {
 
     private var workouts: [StandaloneWorkout] {
         let today = Calendar.current.startOfDay(for: Date())
+        let horizon = Calendar.current.date(byAdding: .day, value: 3, to: today) ?? today
+        // Home only surfaces one-offs that are imminent (today → +3 days); the rest live on Plans.
         return appState.planStore.standaloneWorkouts
-            .filter { $0.date >= today }
+            .filter { $0.date >= today && $0.date <= horizon }
             .sorted { $0.date < $1.date }
     }
 

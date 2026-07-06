@@ -23,6 +23,16 @@ class AppState: ObservableObject {
     @Published var isBuildingWorkout = false
     @Published var workoutBuildError: String?
 
+    /// Transient confirmation banner (e.g. "Workout created"), auto-clears.
+    @Published var toast: String?
+    func showToast(_ message: String) {
+        toast = message
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_200_000_000)
+            if self?.toast == message { self?.toast = nil }
+        }
+    }
+
     let planStore = PlanStore.shared
     private let parser = ClaudeParserService()
 
@@ -186,6 +196,7 @@ class AppState: ObservableObject {
                                  notes: text.trimmingCharacters(in: .whitespacesAndNewlines),
                                  segments: segments)
             planStore.addStandalone(StandaloneWorkout(date: start, day: day, dateAdded: Date()))
+            showToast("Workout created")
             return true
         } catch ImportError.notAWorkout {
             workoutBuildError = "That doesn't look like a workout. Try something like “3K warm-up, 3×10min threshold, 2K cool-down.”"

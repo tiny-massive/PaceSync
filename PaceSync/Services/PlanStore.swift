@@ -47,8 +47,36 @@ class PlanStore: ObservableObject {
         loadStandalone()
         #if targetEnvironment(simulator)
         if plans.isEmpty { seedSampleForSimulator() }
+        if standaloneWorkouts.isEmpty { seedStandaloneForSimulator() }   // independent of the plan seed
         #endif
     }
+
+    #if targetEnvironment(simulator)
+    private func seedStandaloneForSimulator() {
+        func seg(_ type: SegmentType, m: Double? = nil, dur: Int? = nil, reps: Int? = nil,
+                 effort: EffortLevel? = nil) -> WorkoutSegment {
+            WorkoutSegment(id: UUID(), type: type, durationSeconds: dur, distanceMiles: nil,
+                           distanceMeters: m, reps: reps, restDurationSeconds: nil, effort: effort, setIndex: nil)
+        }
+        func at(_ days: Int) -> Date {
+            Calendar.current.date(byAdding: .day, value: days, to: Calendar.current.startOfDay(for: Date())) ?? Date()
+        }
+        let soon = StandaloneWorkout(
+            date: at(2),
+            day: WorkoutDay(id: UUID(), week: 1, dayOfWeek: .friday, title: "Threshold session",
+                            notes: "3K warm-up, then 3 × 10 min threshold, 2K cool-down",
+                            segments: [seg(.warmup, m: 3000), seg(.tempo, dur: 600, reps: 3, effort: .threshold),
+                                       seg(.cooldown, m: 2000)]),
+            dateAdded: Date())
+        let later = StandaloneWorkout(
+            date: at(10),
+            day: WorkoutDay(id: UUID(), week: 1, dayOfWeek: .monday, title: "Easy shakeout",
+                            notes: "Easy 5K shakeout", segments: [seg(.easy, m: 5000)]),
+            dateAdded: Date())
+        standaloneWorkouts = [soon, later]   // 'later' shows on Plans only (beyond Home's 3-day window)
+        persistStandalone()
+    }
+    #endif
 
     // MARK: - Standalone (one-off) workouts
 
@@ -401,19 +429,6 @@ class PlanStore: ObservableObject {
         ]
         activePlanID = activeID
         persist()
-
-        // A sample one-off workout so the "One-off workouts" card isn't empty in the sim.
-        let tempo = WorkoutSegment(id: UUID(), type: .tempo, durationSeconds: 600, distanceMiles: nil,
-                                   distanceMeters: nil, reps: 3, restDurationSeconds: nil,
-                                   effort: .threshold, setIndex: nil)
-        let oneOff = StandaloneWorkout(
-            date: Calendar.current.date(byAdding: .day, value: 2, to: Calendar.current.startOfDay(for: Date())) ?? Date(),
-            day: WorkoutDay(id: UUID(), week: 1, dayOfWeek: .friday, title: "Threshold session",
-                            notes: "3K warm-up, then 3 × 10 min threshold, 2K cool-down",
-                            segments: [s(.warmup, m: 3000), tempo, s(.cooldown, m: 2000)]),
-            dateAdded: Date())
-        standaloneWorkouts = [oneOff]
-        persistStandalone()
     }
     #endif
 }

@@ -7,6 +7,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct RedesignRootView: View {
+    @EnvironmentObject var appState: AppState
     @AppStorage("distanceUnit") private var unit: DistanceUnit = .kilometers
     @State private var selection = 0
 
@@ -25,6 +26,18 @@ struct RedesignRootView: View {
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }
         .tint(Theme.accent)
+        .overlay(alignment: .top) {
+            if let toast = appState.toast {
+                Label(toast, systemImage: "checkmark.circle.fill")
+                    .font(.psCallout).foregroundStyle(Theme.onAccent)
+                    .padding(.horizontal, Theme.s4).padding(.vertical, 10)
+                    .background(Theme.accent, in: Capsule())
+                    .shadow(color: .black.opacity(0.2), radius: 8, y: 3)
+                    .padding(.top, Theme.s2)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(duration: 0.35), value: appState.toast)
         .onAppear {
             #if DEBUG
             // Test hook: launch straight to a tab via SIMCTL_CHILD_PACESYNC_TAB. Inert in normal use.
@@ -46,39 +59,39 @@ struct PlansView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.s5) {
-                if store.plans.isEmpty {
-                    EmptyPlanState().padding(.top, 60)
-                } else {
-                    if let active = store.current {
-                        VStack(alignment: .leading, spacing: 9) {
-                            SectionHeader(text: "Active")
-                            ProgressCard(plan: active, unit: unit)
-                        }
+                if let active = store.current {
+                    VStack(alignment: .leading, spacing: 9) {
+                        SectionHeader(text: "Active")
+                        ProgressCard(plan: active, unit: unit)
                     }
-                    let others = store.plans.filter { $0.id != store.activePlanID }
-                    if !others.isEmpty {
-                        VStack(alignment: .leading, spacing: 9) {
-                            SectionHeader(text: store.current == nil ? "My plans" : "Switch plan")
-                            PSCard(padded: false) {
-                                ForEach(Array(others.enumerated()), id: \.element.id) { i, plan in
-                                    Button { appState.activatePlan(plan.id) } label: { planRow(plan) }
-                                        .buttonStyle(.plain)
-                                        .contextMenu {
-                                            Button { appState.activatePlan(plan.id) } label: {
-                                                Label("Make active", systemImage: "checkmark.circle")
-                                            }
-                                            Button(role: .destructive) { pendingRemove = plan } label: {
-                                                Label("Remove", systemImage: "trash")
-                                            }
+                }
+                let others = store.plans.filter { $0.id != store.activePlanID }
+                if !others.isEmpty {
+                    VStack(alignment: .leading, spacing: 9) {
+                        SectionHeader(text: store.current == nil ? "My plans" : "Switch plan")
+                        PSCard(padded: false) {
+                            ForEach(Array(others.enumerated()), id: \.element.id) { i, plan in
+                                Button { appState.activatePlan(plan.id) } label: { planRow(plan) }
+                                    .buttonStyle(.plain)
+                                    .contextMenu {
+                                        Button { appState.activatePlan(plan.id) } label: {
+                                            Label("Make active", systemImage: "checkmark.circle")
                                         }
-                                    if i < others.count - 1 {
-                                        Rectangle().fill(Theme.hairline).frame(height: 1)
-                                            .padding(.leading, Theme.s4)
+                                        Button(role: .destructive) { pendingRemove = plan } label: {
+                                            Label("Remove", systemImage: "trash")
+                                        }
                                     }
+                                if i < others.count - 1 {
+                                    Rectangle().fill(Theme.hairline).frame(height: 1)
+                                        .padding(.leading, Theme.s4)
                                 }
                             }
                         }
                     }
+                }
+                oneOffSection
+                if store.plans.isEmpty && store.standaloneWorkouts.isEmpty {
+                    EmptyPlanState().padding(.top, 60)
                 }
             }
             .padding(.horizontal, Theme.s4)
@@ -96,6 +109,26 @@ struct PlansView: View {
             Text("This removes the plan from PaceSync and clears its calendar events.")
         }
     }
+
+    @ViewBuilder private var oneOffSection: some View {
+        let oneOffs = store.standaloneWorkouts.sorted { $0.date < $1.date }
+        if !oneOffs.isEmpty {
+            VStack(alignment: .leading, spacing: 9) {
+                SectionHeader(text: "One-off workouts")
+                PSCard(padded: false) {
+                    ForEach(Array(oneOffs.enumerated()), id: \.element.id) { i, sw in
+                        TodayWorkoutRow(day: sw.day, dateText: PlansView.oneOffFmt.string(from: sw.date),
+                                        plannedDate: sw.date, unit: unit, standaloneID: sw.id)
+                            .padding(.horizontal, Theme.s4).padding(.vertical, Theme.s3)
+                        if i < oneOffs.count - 1 {
+                            Rectangle().fill(Theme.hairline).frame(height: 1).padding(.leading, Theme.s4)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    static let oneOffFmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "EEE d MMM"; return f }()
 
     private func planRow(_ plan: SavedPlan) -> some View {
         HStack(spacing: Theme.s3) {

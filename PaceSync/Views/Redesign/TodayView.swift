@@ -140,8 +140,8 @@ struct TodayWorkoutRow: View {
         } label: {
             VStack(alignment: .leading, spacing: Theme.s2) {
                 header
-                HStack(spacing: 9) {
-                    CategoryDot(category: day.displayCategory, size: 10)
+                HStack(alignment: .top, spacing: 9) {
+                    CategoryDot(category: day.displayCategory, size: 10).padding(.top, 4)
                     Text(day.title)
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(Theme.ink)
@@ -152,6 +152,7 @@ struct TodayWorkoutRow: View {
                     }
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.ink3)
+                        .padding(.top, 3)
                 }
             }
             .contentShape(Rectangle())

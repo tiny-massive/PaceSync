@@ -60,25 +60,27 @@ struct RedesignWorkoutDetail: View {
     private var headerCard: some View {
         PSCard {
             VStack(alignment: .leading, spacing: Theme.s3) {
-                HStack(spacing: 9) {
-                    if !d.isRestDay { CategoryDot(category: d.displayCategory, size: 11) }
+                if !subtitle.isEmpty {          // date (+ distance) first, always
+                    Text(subtitle).font(.psCaption).foregroundStyle(Theme.ink3)
+                }
+                HStack(alignment: .top, spacing: 9) {
+                    if !d.isRestDay {
+                        CategoryDot(category: d.displayCategory, size: 11).padding(.top, 6)
+                    }
                     Text(d.isRestDay ? "Rest day" : d.title)
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(Theme.ink)
-                    Spacer()
+                    Spacer(minLength: Theme.s2)
                     if !d.isRestDay {
                         Button { toggleDone() } label: {
                             HStack(spacing: 7) {
-                                CompletionCheckbox(isDone: d.isCompleted)
                                 Text(d.isCompleted ? "Done" : "Mark done")
                                     .font(.psCaption).foregroundStyle(Theme.ink2)
+                                CompletionCheckbox(isDone: d.isCompleted)
                             }
                         }
                         .buttonStyle(.plain)
                     }
-                }
-                if !subtitle.isEmpty {
-                    Text(subtitle).font(.psCallout).foregroundStyle(Theme.ink2)
                 }
                 if let c = d.completion, c.isDone {
                     Text(c.source == .auto ? "Auto-detected from your Apple Watch" : "Marked done")
@@ -182,8 +184,8 @@ struct RedesignWorkoutDetail: View {
     private var subtitle: String {
         var parts: [String] = []
         if !dateText.isEmpty { parts.append(dateText) }
-        let miles = d.segments.compactMap { $0.distanceMiles }.reduce(0, +)
-        if miles > 0 { parts.append(unit.format(miles)) }
+        let dist = d.distanceLabel(unit: unit)
+        if !dist.isEmpty { parts.append(dist) }
         return parts.joined(separator: " · ")
     }
 

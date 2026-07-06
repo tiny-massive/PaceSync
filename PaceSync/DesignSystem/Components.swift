@@ -185,8 +185,8 @@ struct WorkoutRow: View {
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.ink3)
 
-                HStack(spacing: 9) {
-                    CategoryDot(category: day.displayCategory)
+                HStack(alignment: .top, spacing: 9) {
+                    CategoryDot(category: day.displayCategory).padding(.top, 5)
                     Text(day.title)
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(Theme.ink)
@@ -222,13 +222,17 @@ extension WorkoutDay {
         return ""
     }
 
-    /// Distance for a compact row: the structured metric, or — for "open" easy/long runs whose
-    /// distance the parser stored only as a range in the notes — a range derived from that text
-    /// ("8–12 miles" → "13–19 km" in the user's unit). Empty when there's no distance to show.
+    /// A ballpark distance for a compact row: the TOTAL across all segments (metres + miles), so
+    /// every workout — intervals included — shows a distance. Falls back to a range parsed from
+    /// the notes for "open" easy/long runs ("8–12 miles" → "13–19 km"), then to duration.
     func distanceLabel(unit: DistanceUnit) -> String {
-        let metric = shortMetric(unit: unit)
-        if !metric.isEmpty { return metric }
+        let miles = segments.reduce(0.0) { sum, seg in
+            sum + (seg.distanceMiles ?? 0) + (seg.distanceMeters.map { $0 / 1609.34 } ?? 0)
+        }
+        if miles > 0 { return unit.format(miles) }
         if let notes, let range = WorkoutDay.distanceRange(in: notes, unit: unit) { return range }
+        let secs = segments.compactMap { $0.durationSeconds }.reduce(0, +)
+        if secs >= 60 { return "\(secs / 60) min" }
         return ""
     }
 

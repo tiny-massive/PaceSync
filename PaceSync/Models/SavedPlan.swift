@@ -34,12 +34,23 @@ struct SavedPlan: Codable, Identifiable {
         return Calendar.current.date(byAdding: .day, value: -totalOffset, to: raceDateStart)
     }
 
-    /// 0-based index of the current calendar week within the plan. Nil if no race date.
+    /// 0-based index of the current calendar week within the plan. Nil if no race date, OR once
+    /// the plan is over (past the final week) — so the UI can show "complete" instead of freezing
+    /// on the last week forever.
     var currentWeekIndex: Int? {
         guard let startDate = planStartDate else { return nil }
         let today = Calendar.current.startOfDay(for: Date())
         let days = Calendar.current.dateComponents([.day], from: startDate, to: today).day ?? 0
-        return max(0, min(days / 7, plan.weeks.count - 1))
+        let week = days / 7
+        if week < 0 { return 0 }                       // before the plan starts → week 1
+        if week >= plan.weeks.count { return nil }      // past the final week → plan complete
+        return week
+    }
+
+    /// True once today is past the plan's final week (a race date exists but the block is done).
+    var isComplete: Bool {
+        guard planStartDate != nil else { return false }
+        return currentWeekIndex == nil
     }
 
     /// Number of plan weeks that started before today (i.e., user is already "into" the plan).

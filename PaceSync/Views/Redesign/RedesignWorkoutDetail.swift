@@ -110,7 +110,7 @@ struct RedesignWorkoutDetail: View {
             VStack(alignment: .leading, spacing: Theme.s3) {
                 SectionHeader(text: "Sync")
                 if isOnWatch {
-                    Label("On Apple Watch", systemImage: "applewatch")
+                    Label(SyncState.synced.label, systemImage: "applewatch")
                         .font(.psBody).foregroundStyle(Theme.ink)
                 } else if case .scheduling? = status {
                     HStack(spacing: 8) {

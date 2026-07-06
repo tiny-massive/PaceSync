@@ -160,17 +160,16 @@ struct WorkoutRow: View {
     var unit: DistanceUnit = .kilometers
     var syncState: SyncState = .synced
     var isDone: Bool = false
-    var onToggleDone: () -> Void = {}
 
     var body: some View {
         if day.isRestDay {
-            HStack {
-                Text(dateLabel).font(.psCallout).foregroundStyle(Theme.ink3)
-                Spacer()
-                Text("Rest day").font(.psCallout).foregroundStyle(Theme.ink3)
+            VStack(alignment: .leading, spacing: Theme.s2) {
+                Text(dateLabel).font(.system(size: 11)).foregroundStyle(Theme.ink3)
+                Text("Rest day").font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.ink2)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Theme.s4)
-            .padding(.vertical, Theme.s3)
+            .padding(.vertical, Theme.s5)
         } else {
             VStack(alignment: .leading, spacing: Theme.s2) {
                 HStack(spacing: 5) {

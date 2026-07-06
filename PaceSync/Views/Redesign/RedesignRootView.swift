@@ -53,6 +53,7 @@ struct PlansView: View {
     @EnvironmentObject var appState: AppState
     var unit: DistanceUnit = .kilometers
     @State private var pendingRemove: SavedPlan?
+    @State private var showAdd = false
 
     private var store: PlanStore { appState.planStore }
 
@@ -91,7 +92,7 @@ struct PlansView: View {
                 }
                 oneOffSection
                 if store.plans.isEmpty && store.standaloneWorkouts.isEmpty {
-                    EmptyPlanState().padding(.top, 60)
+                    EmptyPlanState(onAdd: { showAdd = true }).padding(.top, 60)
                 }
             }
             .padding(.horizontal, Theme.s4)
@@ -101,6 +102,7 @@ struct PlansView: View {
         .navigationTitle("Plans")
         .navigationBarTitleDisplayMode(.inline)   // centered, matching Home
         .addPlanChrome()
+        .sheet(isPresented: $showAdd) { AddPlanSheet().environmentObject(appState) }
         .alert("Remove this plan?", isPresented: Binding(
             get: { pendingRemove != nil }, set: { if !$0 { pendingRemove = nil } })) {
             Button("Remove", role: .destructive) { if let p = pendingRemove { appState.removePlan(p.id) } }
@@ -258,6 +260,7 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.inline)   // centered, matching Home & Plans
         .onAppear { cacheSize = PlanParseCache.shared.cacheSizeString; prepareExport() }
         .onChange(of: appState.planStore.plans.count) { _, _ in prepareExport() }
         .fileImporter(isPresented: $showRestore,

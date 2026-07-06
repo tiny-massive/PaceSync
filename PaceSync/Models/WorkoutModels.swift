@@ -38,10 +38,11 @@ enum DistanceUnit: String, CaseIterable, Codable {
         }
     }
 
-    /// Format a miles value for display in this unit (e.g. "3.1 mi" or "5.0 km").
+    /// Format a miles value for display in this unit ("3.1 mi", "5 km") — drops a trailing ".0".
     func format(_ miles: Double, decimals: Int = 1) -> String {
         let v = convert(miles)
-        return String(format: "%.\(decimals)f %@", v, shortLabel)
+        let number = v == v.rounded() ? String(Int(v)) : String(format: "%.\(decimals)f", v)
+        return "\(number) \(shortLabel)"
     }
 }
 

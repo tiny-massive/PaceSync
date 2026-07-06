@@ -74,6 +74,8 @@ struct PlanOverviewCard: View {
                     .font(.psHeadline).foregroundStyle(Theme.ink)
                 WeekStrip(plan: plan, weekIndex: week)
                     .padding(.top, 2)
+            } else if plan.isComplete {
+                Text("Plan complete").font(.psHeadline).foregroundStyle(Theme.ink)
             }
         }
         .surfaceCard()

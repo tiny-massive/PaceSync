@@ -238,22 +238,33 @@ extension WorkoutDay {
         return ""
     }
 
-    /// Extract a distance RANGE ("8-12 miles", "8 to 12 mi", "12–16 km") from free text and format
-    /// it in the display unit, rounded to whole units. Returns nil when no range is present.
+    /// Extract a distance from free text — a RANGE ("8-12 miles", "8 to 12 mi") or a single value
+    /// ("8 miles easy") — and format it in the display unit. Returns nil when none is found.
     static func distanceRange(in text: String, unit: DistanceUnit) -> String? {
-        let pattern = #"(\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(\d+(?:\.\d+)?)\s*(miles|mile|mi|km|k)\b"#
-        guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
-        let ns = text as NSString
-        guard let m = re.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)),
-              m.numberOfRanges == 4 else { return nil }
-        func group(_ i: Int) -> String { ns.substring(with: m.range(at: i)) }
-        guard let a = Double(group(1)), let b = Double(group(2)) else { return nil }
-        let sourceIsKm = group(3).lowercased().hasPrefix("k")
-        let aMiles = sourceIsKm ? a / 1.60934 : a
-        let bMiles = sourceIsKm ? b / 1.60934 : b
-        let lo = Int(round(unit.convert(aMiles)))
-        let hi = Int(round(unit.convert(bMiles)))
-        guard lo > 0, hi > 0 else { return nil }
-        return lo == hi ? "\(lo) \(unit.shortLabel)" : "\(lo)–\(hi) \(unit.shortLabel)"
+        func groups(_ pattern: String) -> [String]? {
+            guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+            let ns = text as NSString
+            guard let m = re.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)) else { return nil }
+            return (0..<m.numberOfRanges).map {
+                m.range(at: $0).location == NSNotFound ? "" : ns.substring(with: m.range(at: $0))
+            }
+        }
+        func toMiles(_ value: Double, _ unitWord: String) -> Double {
+            unitWord.lowercased().hasPrefix("k") ? value / 1.60934 : value
+        }
+        // Range: "8 to 12 miles", "8-12 mi", "12 – 16 km", "8–10k".
+        if let g = groups(#"(\d+(?:\.\d+)?)\s*(?:-|–|—|to|&|and)\s*(\d+(?:\.\d+)?)\s*(miles|mile|mi|kilometres|kilometers|kms|km|k)\b"#),
+           g.count >= 4, let a = Double(g[1]), let b = Double(g[2]) {
+            let lo = Int(round(unit.convert(toMiles(a, g[3]))))
+            let hi = Int(round(unit.convert(toMiles(b, g[3]))))
+            if lo > 0, hi > 0 { return lo == hi ? "\(lo) \(unit.shortLabel)" : "\(lo)–\(hi) \(unit.shortLabel)" }
+        }
+        // Single distance: "8 miles easy", "10 km" — exclude a bare 'k'/'5k' (usually a pace).
+        if let g = groups(#"(\d+(?:\.\d+)?)\s*(miles|mile|mi|kilometres|kilometers|km)\b"#),
+           g.count >= 3, let a = Double(g[1]) {
+            let v = Int(ceil(unit.convert(toMiles(a, g[2]))))
+            if v > 0 { return "~\(v) \(unit.shortLabel)" }
+        }
+        return nil
     }
 }

@@ -300,12 +300,25 @@ class ClaudeParserService {
 
     private nonisolated func makeWorkoutDay(from dto: DayStructureDTO, segments: [WorkoutSegment]) -> WorkoutDay {
         let day = DayOfWeek(rawValue: dto.dayOfWeek.lowercased()) ?? .monday
+        // Keep the VERBATIM workout text as the notes so the mileage/range stays visible in-app —
+        // the parser deliberately omits distance from segments for open easy/long runs, so without
+        // this the "8–12 miles easy" is lost. Append coach commentary if it adds anything new.
+        let raw = dto.rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let coach = (dto.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let notes: String?
+        if raw.isEmpty || raw.lowercased() == "rest" {
+            notes = coach.isEmpty ? dto.notes : coach
+        } else if !coach.isEmpty && !raw.localizedCaseInsensitiveContains(coach) {
+            notes = raw + "\n\n" + coach
+        } else {
+            notes = raw
+        }
         return WorkoutDay(
             id: Self.stableDayID(week: dto.week, dayOfWeek: day),
             week: dto.week,
             dayOfWeek: day,
             title: dto.title,
-            notes: dto.notes,
+            notes: notes,
             segments: segments,
             isRaceDay: dto.isRaceDay ?? false
         )

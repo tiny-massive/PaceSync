@@ -57,7 +57,6 @@ struct AddPlanSheet: View {
             }
             .overlay { if appState.isLoading { progress } }
             .interactiveDismissDisabled(appState.isLoading || appState.isBuildingWorkout)
-            .onChange(of: workoutText) { _, _ in appState.workoutBuildError = nil }
             .alert("No race day set", isPresented: $showRaceSkip) {
                 Button("Add Race Day") {
                     importAfterRaceDay = true; pickerDate = AddPlanSheet.defaultRaceDay(); showDatePicker = true

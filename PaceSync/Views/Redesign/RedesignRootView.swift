@@ -86,7 +86,7 @@ struct PlansView: View {
         }
         .background(Theme.canvas.ignoresSafeArea())
         .navigationTitle("Plans")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)   // centered, matching Home
         .addPlanChrome()
         .alert("Remove this plan?", isPresented: Binding(
             get: { pendingRemove != nil }, set: { if !$0 { pendingRemove = nil } })) {

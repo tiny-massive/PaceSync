@@ -47,13 +47,17 @@ class WorkoutKitService: ObservableObject {
 
     // MARK: - Verify
 
-    func isScheduled(_ day: WorkoutDay) async -> Bool {
+    /// Verify a schedule landed by matching BOTH the title AND the target date — titles like
+    /// "Easy run" repeat every week (and across standalone workouts), so a title-only match would
+    /// cross-verify against a different day and mask a silent WorkoutKit drop.
+    func isScheduled(_ day: WorkoutDay, on date: Date) async -> Bool {
+        let target = Calendar.current.dateComponents([.year, .month, .day], from: date)
         let scheduled = await fetchScheduled()
         return scheduled.contains { scheduledPlan in
-            if case .custom(let workout) = scheduledPlan.plan.workout {
-                return workout.displayName == day.title
-            }
-            return false
+            guard case .custom(let workout) = scheduledPlan.plan.workout,
+                  workout.displayName == day.title else { return false }
+            let d = scheduledPlan.date
+            return d.year == target.year && d.month == target.month && d.day == target.day
         }
     }
 

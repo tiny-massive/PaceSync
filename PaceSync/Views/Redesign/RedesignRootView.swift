@@ -266,8 +266,10 @@ struct SettingsView: View {
             let accessed = url.startAccessingSecurityScopedResource()
             defer { if accessed { url.stopAccessingSecurityScopedResource() } }
             if let data = try? Data(contentsOf: url) {
-                let n = appState.planStore.importBackup(data)
-                restoreResult = n > 0 ? "Restored \(n) plan\(n == 1 ? "" : "s")." : "That file isn't a PaceSync backup."
+                let r = appState.planStore.importBackup(data)
+                restoreResult = !r.valid ? "That file isn't a PaceSync backup."
+                    : r.added > 0 ? "Restored \(r.added) plan\(r.added == 1 ? "" : "s")."
+                    : "Those plans are already in PaceSync."
             } else {
                 restoreResult = "Couldn't read that file."
             }

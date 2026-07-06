@@ -159,7 +159,7 @@ class AppState: ObservableObject {
 
         do {
             try await WorkoutKitService.shared.schedule(day, on: date)
-            let confirmed = await WorkoutKitService.shared.isScheduled(day)
+            let confirmed = await WorkoutKitService.shared.isScheduled(day, on: date)
             // If the user switched plans mid-schedule, don't stamp another plan's same-slot day.
             guard planStore.activePlanID == pid else { return }
             if confirmed {
@@ -227,7 +227,7 @@ class AppState: ObservableObject {
         scheduleStatuses[day.id] = .scheduling
         do {
             try await WorkoutKitService.shared.schedule(day, on: date)
-            let confirmed = await WorkoutKitService.shared.isScheduled(day)
+            let confirmed = await WorkoutKitService.shared.isScheduled(day, on: date)
             if confirmed {
                 scheduleStatuses[day.id] = .scheduled
                 scheduledDates[day.id] = date
@@ -278,7 +278,8 @@ class AppState: ObservableObject {
                 // distance (when known) — so a short jog can't tick off a long run.
                 guard let match = sameDay.max(by: { miles($0) < miles($1) }) else { continue }
                 let plannedMiles = day.segments.reduce(0.0) { sum, seg in
-                    sum + (seg.distanceMiles ?? 0) + (seg.distanceMeters.map { $0 / 1609.34 } ?? 0)
+                    let per = (seg.distanceMiles ?? 0) + (seg.distanceMeters.map { $0 / 1609.34 } ?? 0)
+                    return sum + per * Double(max(1, seg.reps ?? 1))   // count interval reps
                 }
                 if plannedMiles > 0 && miles(match) < plannedMiles * 0.5 { continue }
                 planStore.setCompletion(dayID: day.id,

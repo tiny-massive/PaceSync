@@ -285,10 +285,19 @@ class PlanStore: ObservableObject {
     // MARK: - Persistence
 
     private func persist() {
-        let data = try? JSONEncoder().encode(plans)
-        if let data { try? data.write(to: storeURL, options: .atomic) }
+        guard let data = try? JSONEncoder().encode(plans) else {
+            print("⚠️ [PlanStore] persist: encode failed — NOT written (existing file preserved)")
+            return
+        }
+        do {
+            try data.write(to: storeURL, options: .atomic)
+        } catch {
+            // Don't fail silently: the Documents write threw, but the UserDefaults/iCloud backups
+            // below still capture the data, and load() restores from them if plans.json is missing.
+            print("⚠️ [PlanStore] persist: plans.json write FAILED — \(error) (backups still written)")
+        }
         UserDefaults.standard.set(activePlanID?.uuidString, forKey: activeKey)
-        guard let data, !plans.isEmpty else { return }
+        guard !plans.isEmpty else { return }
         // Second copy in Library/Preferences — survives a lost Documents file (same container).
         UserDefaults.standard.set(data, forKey: backupKey)
         // Third copy in iCloud key-value store — survives a full reinstall/container wipe and
@@ -306,23 +315,26 @@ class PlanStore: ObservableObject {
     /// Encode the whole library as a user-exportable backup file.
     func exportData() -> Data? { try? JSONEncoder().encode(plans) }
 
-    /// Restore from a backup file's contents (accepts a [SavedPlan] array or a single SavedPlan).
-    /// Merges by id, activates one if none active. Returns how many plans were restored.
+    /// Restore from a backup file's contents (a [SavedPlan] array or a single SavedPlan). Only ADDS
+    /// plans that aren't already present — never overwrites a current local plan with an older backup
+    /// copy (which would silently discard recent completion/sync state). Returns (added, valid).
     @discardableResult
-    func importBackup(_ data: Data) -> Int {
+    func importBackup(_ data: Data) -> (added: Int, valid: Bool) {
         let decoder = JSONDecoder()
         var incoming: [SavedPlan] = []
         if let arr = try? decoder.decode([SavedPlan].self, from: data) { incoming = arr }
         else if let one = try? decoder.decode(SavedPlan.self, from: data) { incoming = [one] }
-        guard !incoming.isEmpty else { return 0 }
-        for p in incoming {
-            if let i = plans.firstIndex(where: { $0.id == p.id }) { plans[i] = p } else { plans.append(p) }
+        guard !incoming.isEmpty else { return (0, false) }
+        var added = 0
+        for p in incoming where !plans.contains(where: { $0.id == p.id }) {
+            plans.append(p)
+            added += 1
         }
         if activePlanID == nil || !plans.contains(where: { $0.id == activePlanID }) {
             activePlanID = plans.first?.id
         }
-        persist()
-        return incoming.count
+        if added > 0 { persist() }
+        return (added, true)
     }
 
     private func load() {

@@ -222,15 +222,16 @@ extension WorkoutDay {
         return ""
     }
 
-    /// A ballpark distance for a compact row: the TOTAL across all segments (metres + miles), so
-    /// every workout — intervals included — shows a distance. Falls back to a range parsed from
-    /// the notes for "open" easy/long runs ("8–12 miles" → "13–19 km"), then to duration.
+    /// A BALLPARK distance for a compact row. Interval/duration work can't be pinned to a decimal,
+    /// so we sum the TOTAL across all segments (metres + miles × reps) and round UP to a whole unit
+    /// shown as "~10 km" — enough to know "tomorrow's about 10 K". Purely computed, no API. Open
+    /// easy/long runs keep their real range from the notes ("13–19 km"); else falls back to duration.
     func distanceLabel(unit: DistanceUnit) -> String {
         let miles = segments.reduce(0.0) { sum, seg in
             let per = (seg.distanceMiles ?? 0) + (seg.distanceMeters.map { $0 / 1609.34 } ?? 0)
             return sum + per * Double(max(1, seg.reps ?? 1))   // count interval reps toward the total
         }
-        if miles > 0 { return unit.format(miles) }
+        if miles > 0 { return "~\(Int(ceil(unit.convert(miles)))) \(unit.shortLabel)" }
         if let notes, let range = WorkoutDay.distanceRange(in: notes, unit: unit) { return range }
         let secs = segments.compactMap { $0.durationSeconds }.reduce(0, +)
         if secs >= 60 { return "\(secs / 60) min" }

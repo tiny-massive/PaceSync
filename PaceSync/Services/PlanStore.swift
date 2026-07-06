@@ -224,9 +224,41 @@ class PlanStore: ObservableObject {
         let data = try? JSONEncoder().encode(plans)
         if let data { try? data.write(to: storeURL, options: .atomic) }
         UserDefaults.standard.set(activePlanID?.uuidString, forKey: activeKey)
-        // Durable second copy in a different storage domain (Library/Preferences), so a loss of
-        // the Documents file doesn't lose the plan. Never overwrite a good backup with nothing.
-        if let data, !plans.isEmpty { UserDefaults.standard.set(data, forKey: backupKey) }
+        guard let data, !plans.isEmpty else { return }
+        // Second copy in Library/Preferences — survives a lost Documents file (same container).
+        UserDefaults.standard.set(data, forKey: backupKey)
+        // Third copy in iCloud key-value store — survives a full reinstall/container wipe and
+        // syncs across devices. No-ops without the iCloud capability. 1MB store cap, so skip an
+        // oversized library rather than fail silently.
+        if data.count < 900_000 {
+            let kv = NSUbiquitousKeyValueStore.default
+            kv.set(data, forKey: backupKey)
+            kv.synchronize()
+        }
+    }
+
+    // MARK: - Backup / restore (manual export + import)
+
+    /// Encode the whole library as a user-exportable backup file.
+    func exportData() -> Data? { try? JSONEncoder().encode(plans) }
+
+    /// Restore from a backup file's contents (accepts a [SavedPlan] array or a single SavedPlan).
+    /// Merges by id, activates one if none active. Returns how many plans were restored.
+    @discardableResult
+    func importBackup(_ data: Data) -> Int {
+        let decoder = JSONDecoder()
+        var incoming: [SavedPlan] = []
+        if let arr = try? decoder.decode([SavedPlan].self, from: data) { incoming = arr }
+        else if let one = try? decoder.decode(SavedPlan.self, from: data) { incoming = [one] }
+        guard !incoming.isEmpty else { return 0 }
+        for p in incoming {
+            if let i = plans.firstIndex(where: { $0.id == p.id }) { plans[i] = p } else { plans.append(p) }
+        }
+        if activePlanID == nil || !plans.contains(where: { $0.id == activePlanID }) {
+            activePlanID = plans.first?.id
+        }
+        persist()
+        return incoming.count
     }
 
     private func load() {
@@ -267,7 +299,17 @@ class PlanStore: ObservableObject {
             if plans.isEmpty, let data = UserDefaults.standard.data(forKey: backupKey),
                let restored = try? JSONDecoder().decode([SavedPlan].self, from: data), !restored.isEmpty {
                 plans = restored
-                print("📦 [PlanStore] ♻️ recovered \(plans.count) plan(s) from backup: \(plans.map { $0.title })")
+                print("📦 [PlanStore] ♻️ recovered \(plans.count) plan(s) from UserDefaults backup: \(plans.map { $0.title })")
+            }
+            // Last resort: iCloud key-value store — survives a full reinstall/wipe of the container.
+            if plans.isEmpty {
+                let kv = NSUbiquitousKeyValueStore.default
+                kv.synchronize()
+                if let data = kv.data(forKey: backupKey),
+                   let restored = try? JSONDecoder().decode([SavedPlan].self, from: data), !restored.isEmpty {
+                    plans = restored
+                    print("📦 [PlanStore] ♻️ recovered \(plans.count) plan(s) from iCloud backup: \(plans.map { $0.title })")
+                }
             }
         }
 

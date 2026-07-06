@@ -4,6 +4,7 @@
 // The "+" create action lives top-right on the Today and Plans roots.
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct RedesignRootView: View {
     @AppStorage("distanceUnit") private var unit: DistanceUnit = .kilometers
@@ -130,6 +131,9 @@ struct SettingsView: View {
     @State private var cacheSize = PlanParseCache.shared.cacheSizeString
     @State private var showClearCache = false
     @State private var revertingSync = false   // programmatic toggle-off after a failed sync
+    @State private var exportURL: URL?
+    @State private var showRestore = false
+    @State private var restoreResult: String?
 
     var body: some View {
         List {
@@ -198,6 +202,20 @@ struct SettingsView: View {
             }
 
             Section {
+                if let url = exportURL {
+                    ShareLink(item: url) {
+                        Label("Export plans", systemImage: "square.and.arrow.up")
+                    }
+                }
+                Button { showRestore = true } label: {
+                    Label("Restore from file", systemImage: "square.and.arrow.down")
+                }
+                .tint(Theme.ink)
+            } header: { Text("Backup") } footer: {
+                Text("Export saves a backup file to keep in Files or iCloud Drive. Your plans are also backed up to iCloud automatically once iCloud is enabled for the app.")
+            }
+
+            Section {
                 LabeledContent("Plans saved") {
                     Text("\(appState.planStore.plans.count)").foregroundStyle(Theme.ink3)
                 }
@@ -207,9 +225,35 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
-        .onAppear { cacheSize = PlanParseCache.shared.cacheSizeString }
+        .onAppear { cacheSize = PlanParseCache.shared.cacheSizeString; prepareExport() }
+        .onChange(of: appState.planStore.plans.count) { _, _ in prepareExport() }
+        .fileImporter(isPresented: $showRestore,
+                      allowedContentTypes: [.json, .plainText], allowsMultipleSelection: false) { result in
+            guard case .success(let urls) = result, let url = urls.first else { return }
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+            if let data = try? Data(contentsOf: url) {
+                let n = appState.planStore.importBackup(data)
+                restoreResult = n > 0 ? "Restored \(n) plan\(n == 1 ? "" : "s")." : "That file isn't a PaceSync backup."
+            } else {
+                restoreResult = "Couldn't read that file."
+            }
+        }
         .alert("Cache cleared", isPresented: $showClearCache) {
             Button("OK") {}
         } message: { Text("Parsed-plan cache removed. Re-importing will parse fresh.") }
+        .alert("Restore", isPresented: Binding(
+            get: { restoreResult != nil }, set: { if !$0 { restoreResult = nil } })) {
+            Button("OK") {}
+        } message: { Text(restoreResult ?? "") }
+    }
+
+    private func prepareExport() {
+        guard !appState.planStore.plans.isEmpty, let data = appState.planStore.exportData() else {
+            exportURL = nil; return
+        }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("PaceSync-backup.json")
+        try? data.write(to: url, options: .atomic)
+        exportURL = url
     }
 }

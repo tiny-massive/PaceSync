@@ -172,7 +172,7 @@ struct SettingsView: View {
 
     var body: some View {
         List {
-            Section("Units") {
+            Section {
                 Picker(selection: $unit) {
                     ForEach(DistanceUnit.allCases, id: \.self) { u in
                         Text(u.displayName).tag(u)
@@ -181,7 +181,8 @@ struct SettingsView: View {
                     Label("Distance", systemImage: "ruler")
                 }
                 .pickerStyle(.menu)
-            }
+            } header: { SectionHeader(text: "Units") }
+            .listRowBackground(Theme.surface)
 
             Section {
                 Toggle(isOn: $calendarSync) {
@@ -207,9 +208,10 @@ struct SettingsView: View {
                         appState.clearCalendar()
                     }
                 }
-            } header: { Text("Sync") } footer: {
+            } header: { SectionHeader(text: "Sync") } footer: {
                 Text("Adds your workouts to a dedicated “PaceSync” calendar on your phone.")
             }
+            .listRowBackground(Theme.surface)
 
             Section {
                 LabeledContent {
@@ -217,11 +219,12 @@ struct SettingsView: View {
                 } label: {
                     Label("Auto-match from Apple Watch", systemImage: "applewatch")
                 }
-            } header: { Text("Completion") } footer: {
+            } header: { SectionHeader(text: "Completion") } footer: {
                 Text("Finished runs on your Watch tick off matching workouts automatically. You can always mark a workout done by hand.")
             }
+            .listRowBackground(Theme.surface)
 
-            Section("Storage") {
+            Section {
                 Button {
                     PlanParseCache.shared.clearAll()
                     cacheSize = PlanParseCache.shared.cacheSizeString
@@ -234,7 +237,8 @@ struct SettingsView: View {
                     }
                 }
                 .tint(Theme.ink)
-            }
+            } header: { SectionHeader(text: "Storage") }
+            .listRowBackground(Theme.surface)
 
             Section {
                 if let url = exportURL {
@@ -246,9 +250,10 @@ struct SettingsView: View {
                     Label("Restore from file", systemImage: "square.and.arrow.down")
                 }
                 .tint(Theme.ink)
-            } header: { Text("Backup") } footer: {
+            } header: { SectionHeader(text: "Backup") } footer: {
                 Text("Export saves a backup file to keep in Files or iCloud Drive. Your plans are also backed up to iCloud automatically once iCloud is enabled for the app.")
             }
+            .listRowBackground(Theme.surface)
 
             Section {
                 LabeledContent("Plans saved") {
@@ -258,7 +263,10 @@ struct SettingsView: View {
                     Text("PaceSync 2.0").foregroundStyle(Theme.ink3)
                 }
             }
+            .listRowBackground(Theme.surface)
         }
+        .scrollContentBackground(.hidden)
+        .background(Theme.canvas.ignoresSafeArea())
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)   // centered, matching Home & Plans
         .onAppear { cacheSize = PlanParseCache.shared.cacheSizeString; prepareExport() }

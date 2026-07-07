@@ -26,7 +26,7 @@ struct EditWorkoutView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Theme.canvas.ignoresSafeArea()
 
             List {
                 ForEach(displayItems) { item in
@@ -35,7 +35,7 @@ struct EditWorkoutView: View {
                         Button { editingSegment = segment } label: {
                             SegmentEditRow(segment: segment, unit: unit)
                         }
-                        .listRowBackground(Color(UIColor.systemGray6))
+                        .listRowBackground(Theme.surface)
 
                     case .repeatGroup(_, let iterations, let groupSegments):
                         Section {
@@ -43,16 +43,14 @@ struct EditWorkoutView: View {
                                 Button { editingSegment = segment } label: {
                                     SegmentEditRow(segment: segment, unit: unit, showReps: false)
                                 }
-                                .listRowBackground(Color(UIColor.systemGray5))
+                                .listRowBackground(Theme.surfaceRaised)
                             }
                         } header: {
                             HStack(spacing: 6) {
                                 Image(systemName: "repeat")
-                                    .font(.caption2.bold())
-                                    .foregroundStyle(.orange)
-                                Text("Repeat × \(iterations)")
-                                    .font(.caption.bold())
-                                    .foregroundStyle(.orange)
+                                    .font(.psCaption)
+                                    .foregroundStyle(Theme.ink3)
+                                SectionHeader(text: "Repeat × \(iterations)")
                             }
                         }
                     }
@@ -62,10 +60,10 @@ struct EditWorkoutView: View {
                     addingSegment = true
                 } label: {
                     Label("Add Segment", systemImage: "plus.circle.fill")
-                        .foregroundStyle(.green)
-                        .font(.subheadline)
+                        .foregroundStyle(Theme.accent)
+                        .font(.psHeadline)
                 }
-                .listRowBackground(Color(UIColor.systemGray6))
+                .listRowBackground(Theme.surface)
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
@@ -73,13 +71,11 @@ struct EditWorkoutView: View {
         }
         .navigationTitle("Edit Workout")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.black, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Save") { save() }
-                    .font(.headline)
-                    .tint(.green)
+                    .font(.psHeadline)
+                    .tint(Theme.accent)
             }
         }
         .sheet(item: $editingSegment) { segment in
@@ -124,37 +120,23 @@ private struct SegmentEditRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 3)
-                .fill(segmentColor)
-                .frame(width: 4, height: 36)
-
             VStack(alignment: .leading, spacing: 2) {
                 Text(segment.type.rawValue.capitalized)
-                    .font(.subheadline.bold())
-                    .foregroundStyle(.white)
+                    .font(.psHeadline)
+                    .foregroundStyle(Theme.ink)
                 Text(segment.label(unit: unit, showReps: showReps))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.psCallout)
+                    .foregroundStyle(Theme.ink2)
             }
 
             Spacer()
 
             Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+                .font(.psCaption)
+                .foregroundStyle(Theme.ink3)
         }
         .padding(.vertical, 6)
         .contentShape(Rectangle())
-    }
-
-    private var segmentColor: Color {
-        switch segment.type {
-        case .warmup, .cooldown: return .blue
-        case .easy:              return .green
-        case .interval, .tempo:  return .orange
-        case .hills:             return .yellow
-        case .rest:              return .gray
-        }
     }
 }
 
@@ -203,52 +185,52 @@ struct EditSegmentSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.black.ignoresSafeArea()
+                Theme.canvas.ignoresSafeArea()
 
                 Form {
-                    Section("Type") {
+                    Section {
                         Picker("Segment type", selection: $type) {
                             ForEach(SegmentType.allCases, id: \.self) { t in
                                 Text(t.rawValue.capitalized).tag(t)
                             }
                         }
                         .pickerStyle(.wheel)
-                    }
-                    .listRowBackground(Color(UIColor.systemGray6))
+                    } header: { SectionHeader(text: "Type") }
+                    .listRowBackground(Theme.surface)
 
-                    Section("Duration / Distance") {
+                    Section {
                         HStack {
                             Text("Minutes")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.ink2)
                             Spacer()
                             TextField("—", text: $durationMinutes)
                                 .keyboardType(.numberPad)
                                 .multilineTextAlignment(.trailing)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(Theme.ink)
                                 .frame(width: 80)
                         }
                         HStack {
                             Text(unit.displayName)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.ink2)
                             Spacer()
                             TextField("—", text: $distanceInput)
                                 .keyboardType(.decimalPad)
                                 .multilineTextAlignment(.trailing)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(Theme.ink)
                                 .frame(width: 80)
                         }
-                    }
-                    .listRowBackground(Color(UIColor.systemGray6))
+                    } header: { SectionHeader(text: "Duration / Distance") }
+                    .listRowBackground(Theme.surface)
 
                     if showReps {
-                        Section("Repetitions") {
+                        Section {
                             Stepper("Reps: \(reps)", value: $reps, in: 1...30)
-                                .foregroundStyle(.white)
-                        }
-                        .listRowBackground(Color(UIColor.systemGray6))
+                                .foregroundStyle(Theme.ink)
+                        } header: { SectionHeader(text: "Repetitions") }
+                        .listRowBackground(Theme.surface)
                     }
 
-                    Section("Effort") {
+                    Section {
                         Picker("Effort", selection: $effort) {
                             Text("None").tag(Optional<EffortLevel>.none)
                             ForEach(EffortLevel.allCases, id: \.self) { e in
@@ -256,22 +238,20 @@ struct EditSegmentSheet: View {
                             }
                         }
                         .pickerStyle(.wheel)
-                    }
-                    .listRowBackground(Color(UIColor.systemGray6))
+                    } header: { SectionHeader(text: "Effort") }
+                    .listRowBackground(Theme.surface)
                 }
                 .scrollContentBackground(.hidden)
             }
             .navigationTitle("Edit Segment")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Color.black, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }.foregroundStyle(.secondary)
+                    Button("Cancel") { dismiss() }.foregroundStyle(Theme.ink2)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { saveAndDismiss() }
-                        .font(.headline).tint(.green)
+                        .font(.psHeadline).tint(Theme.accent)
                 }
             }
         }

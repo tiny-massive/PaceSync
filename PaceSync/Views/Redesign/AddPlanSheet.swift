@@ -91,7 +91,7 @@ struct AddPlanSheet: View {
                 }
                 .tint(Theme.accent)
             }
-        } header: { Text("Race day") } footer: {
+        } header: { SectionHeader(text: "Race day") } footer: {
             Text("PaceSync dates every workout by counting back from race day. You can skip this and add it later.")
         }
     }
@@ -137,7 +137,7 @@ struct AddPlanSheet: View {
             }
             .buttonStyle(.borderedProminent).tint(Theme.accent).controlSize(.large)
             .disabled(!hasPlanContent || appState.isLoading)
-        } header: { Text("Import a plan") }
+        } header: { SectionHeader(text: "Import a plan") }
     }
 
     // MARK: Section 3 — One-off workout
@@ -174,7 +174,7 @@ struct AddPlanSheet: View {
             }
             .buttonStyle(.borderedProminent).tint(Theme.accent).controlSize(.large)
             .disabled(workoutText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || appState.isBuildingWorkout)
-        } header: { Text("Single custom workout") }
+        } header: { SectionHeader(text: "Single custom workout") }
     }
 
     // MARK: Progress overlay (full-plan import only)

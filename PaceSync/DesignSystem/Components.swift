@@ -68,10 +68,13 @@ struct SyncChip: View {
 struct SectionHeader: View {
     let text: String
     var body: some View {
-        Text(text.uppercased())
-            .font(.psLabel)
-            .tracking(0.7)
-            .foregroundStyle(Theme.ink2)
+        // Same treatment as the other small card titles ("Today", date lines):
+        // sentence case, psCaption, ink3 — one micro-header voice everywhere.
+        // textCase(nil) defeats the automatic UPPERCASING inside Form/List headers.
+        Text(text)
+            .font(.psCaption)
+            .textCase(nil)
+            .foregroundStyle(Theme.ink3)
     }
 }
 

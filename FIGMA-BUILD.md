@@ -33,21 +33,49 @@ Plan naming: name auto-generated from the plan/PDF at import, user can override.
 
 ## Stages
 
-- [ ] A. Variables — `PaceSync / Color` (Light+Dark) + `PaceSync / Primitives`
-      IDs: (fill in)
-- [ ] B. Text styles PS/* in SF Pro + new pages created
-      IDs: (fill in)
-- [ ] C. Core components on `PS 2 · Components`: PSCard, SectionHeader, CategoryDot,
-      CompletionCheckbox, PSPrimaryButton, PSSecondaryButton, WorkoutRow,
-      TodayWorkoutRow, WeekStrip, ProgressRing, Toast capsule
-      IDs: (fill in)
-- [ ] D. Apple kit instances wired (status bar, tab bar, home indicator, toggle,
-      segmented control) — or noted fallback
-- [ ] E. Screens on `PS 3 · Screens` (light): Home, Plans (+ naming), Workout Detail,
-      Add Training, Settings, Full Plan (List), Full Plan (Calendar), Edit Workout,
-      Edit Segment
-- [ ] F. Dark-mode duplicates + final validation pass (per-section screenshots)
+- [x] A. Variables — DONE 2026-07-07.
+      Color coll `VariableCollectionId:67:2` (Light `67:0`, Dark `67:1`); Prims `VariableCollectionId:67:24`.
+      Vars 67:3–67:23 (colors in Theme.swift order: canvas,surface,surfaceRaised,hairline,ink,ink2,ink3,
+      accent,accentSoft,onAccent,warning,error,chipFill,control,cat easy/long/tempo/intervals/hills/strength/rest);
+      prims 67:25–67:34 (radius card/row/control/chip, space s1–s6).
+- [x] B. Text styles + pages — DONE 2026-07-07. SF Pro ("Semibold" style string).
+      PS/LargeTitle→Label created. Pages: Foundations `67:42`, Components `67:43`, Screens `67:44`.
+- [x] C. Core components — DONE 2026-07-07 on page 67:43:
+      CategoryDot `69:2`, CompletionCheckbox set `69:8` (Done=Off/On),
+      SectionHeader `69:9`, Button set `69:15` (Kind=Primary/Secondary), Toast `69:16`,
+      TodayWorkoutRow set `70:44` (Sync=NotSynced/Synced/Done),
+      WorkoutRow set `70:86` (State=NotSynced/Synced/Done/Rest),
+      WeekDay set `71:22` (State=Done/Pending/Rest/Today), WeekStrip `71:23`, ProgressRing `71:45`.
+      Card containers are built per-screen (variable-bound frames), not a slot component.
+- [~] D. Apple kit — BLOCKED: `importComponentByKeyAsync` returns "Not permitted to
+      upsert from library" because the iOS 26 community library is NOT ADDED to the file.
+      USER ACTION: in Figma, Assets panel → Libraries (book icon) → search
+      "iOS and iPadOS 26" → Add to file. Then swap: per-screen node named
+      "Tab bar (placeholder — swap for iOS 26 kit …)" + add "Status bar - iPhone"
+      (key 51ddb19de206b67eae2d554b1d20c018feb754f4) at y=0 of each screen, and
+      Home Indicator set key 7aafe068eb8261b9aa743403f83769ae78800a38,
+      Tab Bar - iPhone set key 1a05576da751e45de479836ff1f59971cedc2606.
+- [~] E. Screens on page 67:44 (light, 402×874) — 5 of 9 DONE 2026-07-07:
+      Home `73:2` (content 73:7), Plans `79:7` (content 79:12, ProgressCard 79:15),
+      Add Training `82:13` (content 82:17 — includes NEW auto plan-name row w/ sparkle),
+      Workout Detail `83:13` (content 83:17), Settings `84:13` (content 84:15).
+      REMAINING: Full Plan (List), Full Plan (Calendar), Edit Workout, Edit Segment.
+- [ ] F. Dark-mode duplicates (set explicit Dark mode `67:1` of collection 67:2 on
+      duplicated frames) + swap Apple chrome + user visual pass.
+
+## CRITICAL BUILD CONSTRAINT discovered 2026-07-07
+SF Pro is a LOCAL font → the MCP's server-side renderer can't re-render it:
+1. `setProperties` on TEXT props fails ("font that isn't available") — component TEXT
+   props exist on the row sets but are unusable from MCP. (They still work fine for
+   humans in the Figma app.)
+2. Editing text INSIDE instances silently reverts. Pattern that works:
+   `variant.createInstance().detachInstance()` then edit text on the detached copy.
+3. MCP screenshots render STALE text — do not trust them for copy; verify by
+   reading `.characters` back. The user's Figma app renders correctly.
 
 ## Progress log
 - 2026-07-07: Tracker created. File inspected (1 page, old content mapped).
   SF Pro confirmed available. No local components. Old TimeBar collections left as-is.
+- 2026-07-07 (later): Stages A–C done; 5 screens built (~25 MCP calls, no rate limit hit).
+  Next session: remaining 4 screens, dark duplicates, Apple chrome swap after user
+  enables the iOS 26 library.

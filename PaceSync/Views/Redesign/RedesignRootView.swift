@@ -260,7 +260,8 @@ struct SettingsView: View {
                     Text("\(appState.planStore.plans.count)").foregroundStyle(Theme.ink3)
                 }
                 LabeledContent("Version") {
-                    Text("PaceSync 2.0").foregroundStyle(Theme.ink3)
+                    Text("PaceSync \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))")
+                        .foregroundStyle(Theme.ink3)
                 }
             }
             .listRowBackground(Theme.surface)

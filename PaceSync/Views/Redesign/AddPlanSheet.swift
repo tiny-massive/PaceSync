@@ -25,6 +25,10 @@ struct AddPlanSheet: View {
     // One-off workout
     @State private var workoutText = ""
     @State private var workoutDate = Calendar.current.startOfDay(for: Date())
+    // AI consent (5.1.2(i)) — gate the FIRST parse behind an explicit disclosure
+    @State private var showAIConsent = false
+    @State private var pendingAfterConsent: PendingParse? = nil
+    private enum PendingParse { case importPlan, createWorkout }
 
     private var hasPlanContent: Bool {
         attachedFileURL != nil || !planText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -57,6 +61,16 @@ struct AddPlanSheet: View {
             }
             .overlay { if appState.isLoading { progress } }
             .interactiveDismissDisabled(appState.isLoading || appState.isBuildingWorkout)
+            .sheet(isPresented: $showAIConsent) {
+                AIConsentSheet {
+                    switch pendingAfterConsent {
+                    case .importPlan:    startImport()
+                    case .createWorkout: startCreateWorkout()
+                    case nil: break
+                    }
+                    pendingAfterConsent = nil
+                }
+            }
             .alert("No race day set", isPresented: $showRaceSkip) {
                 Button("Add Race Day") {
                     importAfterRaceDay = true; pickerDate = AddPlanSheet.defaultRaceDay(); showDatePicker = true
@@ -131,7 +145,8 @@ struct AddPlanSheet: View {
             }
 
             Button {
-                if raceDate == nil { showRaceSkip = true } else { Task { await runImport() } }
+                if AIConsent.given { startImport() }
+                else { pendingAfterConsent = .importPlan; showAIConsent = true }
             } label: {
                 Text("Import Plan").frame(maxWidth: .infinity)
             }
@@ -158,9 +173,8 @@ struct AddPlanSheet: View {
             }
 
             Button {
-                Task {
-                    if await appState.createStandaloneWorkout(text: workoutText, on: workoutDate) { dismiss() }
-                }
+                if AIConsent.given { startCreateWorkout() }
+                else { pendingAfterConsent = .createWorkout; showAIConsent = true }
             } label: {
                 HStack(spacing: 8) {
                     if appState.isBuildingWorkout {
@@ -198,6 +212,18 @@ struct AddPlanSheet: View {
     }
 
     // MARK: Actions
+
+    /// Post-consent entry for the Import Plan button (race-day check, then parse).
+    private func startImport() {
+        if raceDate == nil { showRaceSkip = true } else { Task { await runImport() } }
+    }
+
+    /// Post-consent entry for the Create Workout button.
+    private func startCreateWorkout() {
+        Task {
+            if await appState.createStandaloneWorkout(text: workoutText, on: workoutDate) { dismiss() }
+        }
+    }
 
     private func runImport() async {
         if let url = attachedFileURL {
@@ -297,6 +323,7 @@ struct PlanSettingsChrome: ViewModifier {
     @State private var showRename = false
     @State private var showRaceDate = false
     @State private var showRemove = false
+    @State private var showAIConsent = false
     @State private var renameText = ""
     @State private var raceDate = Date()
 
@@ -314,7 +341,10 @@ struct PlanSettingsChrome: ViewModifier {
                                 raceDate = appState.planStore.current?.raceDate ?? Date()
                                 showRaceDate = true
                             } label: { Label("Change race day", systemImage: "calendar") }
-                            Button { Task { await appState.reparse() } } label: {
+                            Button {
+                                if AIConsent.given { Task { await appState.reparse() } }
+                                else { showAIConsent = true }
+                            } label: {
                                 Label("Re-import", systemImage: "arrow.clockwise")
                             }
                             Divider()
@@ -324,6 +354,9 @@ struct PlanSettingsChrome: ViewModifier {
                         } label: { Image(systemName: "ellipsis.circle") }
                     }
                 }
+            }
+            .sheet(isPresented: $showAIConsent) {
+                AIConsentSheet { Task { await appState.reparse() } }
             }
             .sheet(isPresented: $showRaceDate) {
                 RaceDaySheet(date: $raceDate) {

@@ -256,6 +256,14 @@ struct SettingsView: View {
             .listRowBackground(Theme.surface)
 
             Section {
+                Link(destination: AIConsent.privacyPolicyURL) {
+                    Label("Privacy Policy", systemImage: "hand.raised")
+                }
+                .tint(Theme.ink)
+                Link(destination: AIConsent.supportURL) {
+                    Label("Support", systemImage: "questionmark.circle")
+                }
+                .tint(Theme.ink)
                 LabeledContent("Plans saved") {
                     Text("\(appState.planStore.plans.count)").foregroundStyle(Theme.ink3)
                 }

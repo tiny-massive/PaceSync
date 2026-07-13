@@ -131,3 +131,69 @@ SWAP-podcast workflow's payoff: MD → calendar file → daily plan in your cale
 **Why this order:** can't redesign on a still-changing model (3 before 4); can't change persistence
 formats without a migration that won't wipe users (2 before 3); calendar sync last so it reuses
 stable identity + date math instead of a second fragile state mirror.
+
+---
+
+## Phase 6 — App Store launch (added 2026-07-13)
+
+_Status going in: Phases 1–5 are functionally done (proxy live + rate-limited, tokens rotated,
+history scrubbed, multi-plan library, triple backup, calendar sync, redesign shipped, 12 unit
+tests, TestFlight build 1.1(5) live). Requirements below were verified against Apple primary
+sources on 2026-07-13 (multi-agent research + adversarial verification)._
+
+### Done 2026-07-13
+- **PrivacyInfo.xcprivacy** added (UserDefaults CA92.1 + User Content collection declaration).
+  Blocking-enforced by Apple since May 2024 (ITMS-91053) — was missing.
+- **Version unified to 2.0 (build 6)** (configs had 1.0/1.1 split; Settings hardcoded "2.0" —
+  now reads the bundle).
+
+### Step 1 — AI-consent flow (code, ~1 h) — REQUIRED
+Guideline 5.1.2(i) (since Nov 13 2025): *"clearly disclose where personal data will be shared
+with third parties, including with third-party AI, and obtain explicit permission before doing
+so."* Reviewer-corroborated expectation (Apple dev-forum staff replies): disclose **what** is
+sent, **to whom**, and get permission **before** sending. Build: one-time sheet before the first
+parse — "PaceSync sends your plan text to Anthropic (Claude) to turn it into workouts. Nothing
+else leaves your phone." → Continue / Cancel, persisted flag; also gates single-workout parse.
+Plus a Settings row linking the privacy policy (5.1.1(i) requires the policy link **inside the
+app** too — doubly required because of HealthKit).
+
+### Step 2 — Privacy policy + support pages (code + deploy)
+Serve `GET /privacy` and `/support` from the existing Cloudflare worker (no new infra).
+Policy must name Anthropic (≈30-day API retention), state HealthKit data never leaves the
+device and is never sent to the AI (true today — keep it true), calendar usage, no accounts /
+analytics / tracking, contact email. These URLs go in App Store Connect (privacy policy URL is
+a required field; support URL required per version).
+
+### Step 3 — Screenshots (local, no cost)
+One 6.9" portrait set satisfies everything (1320×2868 or 1290×2796; 1–10 images; smaller sizes
+auto-scale; no iPad set for an iPhone-only app). Boot an iPhone 16/17 Pro Max simulator with the
+seeded sample plan; capture Home, Plans, Workout Detail, Add Training, Full Plan (calendar),
+Settings — light + a dark shot or two.
+
+### Step 4 — Listing copy (draft for owner edit)
+Name "PaceSync" (≤30 chars, already held) · subtitle ≤30 chars (e.g. "Your plan, on your wrist")
+· description ≤4000 · keywords 100 bytes · promo text ≤170 (editable post-review). Category:
+Health & Fitness (primary), Sports (secondary).
+
+### Step 5 — Archive 2.0 (6) → TestFlight → device sanity pass (owner, guided)
+Verify: consent sheet on first parse, fresh-install restore-from-iCloud, Watch sync, calendar
+event, policy link opens.
+
+### Step 6 — App Store Connect forms (owner, exact answers provided)
+- **App Privacy label:** collects **User Content** ("Other User Content" — plan text), purpose
+  App Functionality, **not linked** to identity, **no tracking**. Must match the manifest (it
+  does). Declaring "Data Not Collected" while calling an LLM API is a known rejection.
+- **Age rating (new 2026 questionnaire, mandatory):** honest answer on "Health or Wellness
+  Topics" (exercise/self-care) → expect **9+**. No user-to-user chat/UGC → those are "No".
+- **Review notes:** paste a small sample plan text so the reviewer can parse without hunting for
+  a PDF; explain HealthKit read = auto-ticking completed runs; note no account is needed.
+- Content rights, copyright ("© 2026 Schoolwork Studio"), export compliance already declared.
+
+### Step 7 — Submit
+Apple: 90% of submissions reviewed in <24 h. Rejection risks pre-mitigated: 5.1.2(i) consent
+(Step 1), label/manifest mismatch (Step 6), HealthKit-without-policy (Steps 1–2).
+
+### Post-launch guardrails
+Anthropic console spend cap; Cloudflare caps already live (200/IP/day, 5 000/day global);
+crashes via Xcode Organizer. Optional hardening: hash the IP in the worker's rate-limit KV key.
+Backlog unchanged: COROS (API application), pace-range parser upgrade, one-off editing.

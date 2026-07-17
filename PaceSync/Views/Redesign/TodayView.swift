@@ -316,48 +316,51 @@ struct ProgressCard: View {
     var unit: DistanceUnit = .kilometers
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.s3) {
-            HStack(alignment: .top, spacing: Theme.s3) {
-                VStack(alignment: .leading, spacing: 4) {
-                    if plan.raceDate != nil {
-                        Text("Race day · \(ProgressCard.fmt.string(from: plan.raceDate!))")
+        // The WHOLE card navigates — "View full plan" stays as the visual affordance,
+        // but there are no dead zones to mis-tap.
+        NavigationLink {
+            FullPlanView(plan: plan, unit: unit)
+        } label: {
+            VStack(alignment: .leading, spacing: Theme.s3) {
+                HStack(alignment: .top, spacing: Theme.s3) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        if plan.raceDate != nil {
+                            Text("Race day · \(ProgressCard.fmt.string(from: plan.raceDate!))")
+                                .font(.psCallout).foregroundStyle(Theme.ink2)
+                        }
+                        Text(weekLine).font(.psHeadline).foregroundStyle(Theme.ink)
+                        Text("Done \(plan.completedCount) of \(plan.workoutCount) workouts")
                             .font(.psCallout).foregroundStyle(Theme.ink2)
+                        if syncedCount > 0 {
+                            Text("On Watch · \(syncedCount) of \(plan.workoutCount)")
+                                .font(.psCaption).foregroundStyle(Theme.ink3)
+                        }
+                        if calendarCount > 0 {
+                            Text("On Calendar · \(calendarCount) of \(plan.workoutCount)")
+                                .font(.psCaption).foregroundStyle(Theme.ink3)
+                        }
                     }
-                    Text(weekLine).font(.psHeadline).foregroundStyle(Theme.ink)
-                    Text("Done \(plan.completedCount) of \(plan.workoutCount) workouts")
-                        .font(.psCallout).foregroundStyle(Theme.ink2)
-                    if syncedCount > 0 {
-                        Text("On Watch · \(syncedCount) of \(plan.workoutCount)")
-                            .font(.psCaption).foregroundStyle(Theme.ink3)
-                    }
-                    if calendarCount > 0 {
-                        Text("On Calendar · \(calendarCount) of \(plan.workoutCount)")
-                            .font(.psCaption).foregroundStyle(Theme.ink3)
+                    Spacer(minLength: Theme.s2)
+                    if let d = daysToRace, d >= 0 {
+                        ProgressRing(fraction: ringFraction, big: "\(d)", small: "days")
                     }
                 }
-                Spacer(minLength: Theme.s2)
-                if let d = daysToRace, d >= 0 {
-                    ProgressRing(fraction: ringFraction, big: "\(d)", small: "days")
-                }
-            }
-            Rectangle().fill(Theme.hairline).frame(height: 1)
-            NavigationLink {
-                FullPlanView(plan: plan, unit: unit)
-            } label: {
+                Rectangle().fill(Theme.hairline).frame(height: 1)
                 HStack {
                     Text("View full plan").font(.psHeadline).foregroundStyle(Theme.ink)
                     Spacer()
                     Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.ink3)
                 }
             }
-            .buttonStyle(.plain)
+            .padding(Theme.s4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous)
+                .strokeBorder(Theme.hairline, lineWidth: 1))
+            .contentShape(RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous))
         }
-        .padding(Theme.s4)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous)
-            .strokeBorder(Theme.hairline, lineWidth: 1))
+        .buttonStyle(.plain)
     }
 
     private var syncedCount: Int { plan.plan.allDays.filter { $0.scheduledDate != nil }.count }

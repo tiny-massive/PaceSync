@@ -45,6 +45,19 @@ class WorkoutKitService: ObservableObject {
         await WorkoutScheduler.shared.schedule(plan, at: components)
     }
 
+    /// The user's in-app display unit — Watch goals are built in the SAME unit so a
+    /// metric user never sees miles on the wrist.
+    private var displayUnit: DistanceUnit {
+        DistanceUnit(rawValue: UserDefaults.standard.string(forKey: "distanceUnit") ?? "") ?? .kilometers
+    }
+
+    /// Watch-facing name: include the distance ballpark/range ("Easy Run · 13–19 km") so an
+    /// open-goal run still tells the runner how far — the app's row label, on the wrist.
+    private func watchDisplayName(for day: WorkoutDay) -> String {
+        let dist = day.distanceLabel(unit: displayUnit)
+        return dist.isEmpty ? day.title : "\(day.title) · \(dist)"
+    }
+
     // MARK: - Verify
 
     /// Verify a schedule landed by matching BOTH the title AND the target date — titles like
@@ -53,9 +66,13 @@ class WorkoutKitService: ObservableObject {
     func isScheduled(_ day: WorkoutDay, on date: Date) async -> Bool {
         let target = Calendar.current.dateComponents([.year, .month, .day], from: date)
         let scheduled = await fetchScheduled()
+        let composedName = watchDisplayName(for: day)
         return scheduled.contains { scheduledPlan in
+            // Accept both the composed name and the bare title so workouts synced
+            // before the "title · distance" change still verify as scheduled.
             guard case .custom(let workout) = scheduledPlan.plan.workout,
-                  workout.displayName == day.title else { return false }
+                  workout.displayName == composedName || workout.displayName == day.title
+            else { return false }
             let d = scheduledPlan.date
             return d.year == target.year && d.month == target.month && d.day == target.day
         }
@@ -89,7 +106,7 @@ class WorkoutKitService: ObservableObject {
         return CustomWorkout(
             activity: .running,
             location: .outdoor,
-            displayName: day.title,
+            displayName: watchDisplayName(for: day),
             warmup: warmup,
             blocks: blocks,
             cooldown: cooldown
@@ -114,10 +131,16 @@ class WorkoutKitService: ObservableObject {
                     groupSegs.append(segments[i])
                     i += 1
                 }
-                let steps = groupSegs.map { s -> IntervalStep in
+                var steps = groupSegs.map { s -> IntervalStep in
                     IntervalStep(s.type == .rest ? .recovery : .work, goal: goal(for: s))
                 }
                 let iterations = groupSegs.first(where: { $0.reps != nil })?.reps ?? 1
+                // A repeating block with no recovery step would run reps back-to-back
+                // (20s, 20s, 20s…). Insert one — timed if the plan gave a rest, else OPEN
+                // so the runner advances it with a tap when they're back at the bottom.
+                if iterations > 1 && !groupSegs.contains(where: { $0.type == .rest }) {
+                    steps.append(IntervalStep(.recovery, goal: recoveryGoal(for: groupSegs.first)))
+                }
                 blocks.append(IntervalBlock(steps: steps, iterations: iterations))
                 print("🏗️ [makeBlocks] GROUPED block (setIndex=\(setIdx)): \(steps.count) steps × \(iterations) iterations")
                 for (j, s) in groupSegs.enumerated() {
@@ -138,8 +161,15 @@ class WorkoutKitService: ObservableObject {
             } else {
                 // Standalone work step (no following rest, or rest already consumed)
                 let workStep = IntervalStep(.work, goal: goal(for: seg))
-                blocks.append(IntervalBlock(steps: [workStep], iterations: seg.reps ?? 1))
-                print("🏗️ [makeBlocks] STANDALONE block: \(seg.type.rawValue), \(seg.reps ?? 1) iterations")
+                var steps = [workStep]
+                let iterations = seg.reps ?? 1
+                // Same back-to-back guard as grouped blocks: "4 × 20s hill strides" needs a
+                // recovery between reps even when the plan never specifies one.
+                if iterations > 1 {
+                    steps.append(IntervalStep(.recovery, goal: recoveryGoal(for: seg)))
+                }
+                blocks.append(IntervalBlock(steps: steps, iterations: iterations))
+                print("🏗️ [makeBlocks] STANDALONE block: \(seg.type.rawValue), \(iterations) iterations")
                 i += 1
             }
         }
@@ -149,14 +179,27 @@ class WorkoutKitService: ObservableObject {
 
     private func goal(for segment: WorkoutSegment) -> WorkoutGoal {
         if let meters = segment.distanceMeters {
-            return .distance(meters, .meters)
+            return .distance(meters, .meters)   // track reps are metric by nature (800m is 800m)
         } else if let miles = segment.distanceMiles {
-            return .distance(miles, .miles)
+            // Build the goal in the user's display unit so the wrist matches the app.
+            switch displayUnit {
+            case .miles:      return .distance(miles, .miles)
+            case .kilometers: return .distance(miles * 1.60934, .kilometers)
+            }
         } else if let seconds = segment.durationSeconds {
             return .time(Double(seconds), .seconds)
         } else {
             return .open
         }
+    }
+
+    /// Recovery between reps: the plan's stated rest if there is one, else OPEN — the
+    /// runner walks/jogs back and double-taps to start the next rep.
+    private func recoveryGoal(for segment: WorkoutSegment?) -> WorkoutGoal {
+        if let rest = segment?.restDurationSeconds, rest > 0 {
+            return .time(Double(rest), .seconds)
+        }
+        return .open
     }
 }
 

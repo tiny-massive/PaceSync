@@ -119,7 +119,11 @@ class ClaudeParserService {
         EXTRACTION RULES:
         - Output exactly 7 entries per complete week (monday through sunday)
         - dayOfWeek: lowercase only
-        - rawText: copy the EXACT source text for this day's workout. For rest days use "Rest"
+        - rawText: copy the COMPLETE, EXACT source text for this day — EVERY line of the day's \
+        cell: the leading mileage/duration statement ("8-12 mi easy"), any add-ons \
+        ("4 x 20 sec hill strides"), and any commentary. NEVER summarize, shorten, or drop \
+        the mileage line — rawText alone must be enough to recreate the whole day. \
+        For rest days use "Rest"
         - title: brief descriptive name ("Rest Day", "Easy Run", "Track Intervals", "Long Run w/ Tempo")
         - notes: coach tips / context accompanying the workout — omit if none
         - isRaceDay: true ONLY for the marathon / race day itself

@@ -2,6 +2,12 @@ name = "pacesync-proxy"
 main = "worker.js"
 compatibility_date = "2025-06-01"
 
+# racebound.app is bound directly to this worker: / (holding page → site),
+# /privacy, /support, and the /v1/messages proxy all live in one deploy.
+routes = [
+  { pattern = "racebound.app", custom_domain = true }
+]
+
 [[kv_namespaces]]
 binding = "RATE_KV"
 id = "470c061f470342509c1b023a25b9a183"

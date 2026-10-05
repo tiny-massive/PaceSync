@@ -11,8 +11,8 @@ enum AIConsent {
         get { UserDefaults.standard.bool(forKey: key) }
         set { UserDefaults.standard.set(newValue, forKey: key) }
     }
-    static let privacyPolicyURL = URL(string: "https://pacesync-proxy.pacesync.workers.dev/privacy")!
-    static let supportURL = URL(string: "https://pacesync-proxy.pacesync.workers.dev/support")!
+    static let privacyPolicyURL = URL(string: "https://racebound.app/privacy")!
+    static let supportURL = URL(string: "https://racebound.app/support")!
 }
 
 struct AIConsentSheet: View {

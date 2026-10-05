@@ -51,8 +51,8 @@ without one.
 (96 bytes)
 
 ## URLs
-- Privacy policy: https://pacesync-proxy.pacesync.workers.dev/privacy  (live ✔)
-- Support:        https://pacesync-proxy.pacesync.workers.dev/support  (live ✔)
+- Privacy policy: https://racebound.app/privacy  (live ✔)
+- Support:        https://racebound.app/support  (live ✔)
 - Copyright: © 2026 Schoolwork Studio (Pty) Ltd
 
 ## Category

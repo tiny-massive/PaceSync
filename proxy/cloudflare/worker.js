@@ -95,6 +95,21 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     // Public pages (required App Store listing URLs) — no token needed.
+    if (request.method === "GET" && url.pathname === "/") {
+      return page("Racebound — any plan, on your Apple Watch", `
+<div style="text-align:center;padding-top:14vh">
+<div style="font-size:52px">🏃</div>
+<h1 style="font-size:34px;margin:12px 0 8px">Racebound</h1>
+<p style="font-size:19px;max-width:28em;margin:0 auto">Turn any training plan — a PDF,
+a book page, or a sentence — into structured workouts in your Apple Watch's built-in
+Workout app. Scheduled, synced, ticked off automatically.</p>
+<p style="color:#8b929d">Pay once. No subscription. No account.</p>
+<p style="margin-top:28px;font-weight:600">Coming to the App Store.</p>
+<p style="margin-top:40px;font-size:14px"><a href="/privacy">Privacy</a> &nbsp;·&nbsp;
+<a href="/support">Support</a> &nbsp;·&nbsp;
+<a href="mailto:bernhardt@schoolwork.studio">Contact</a></p>
+</div>`);
+    }
     if (request.method === "GET" && url.pathname === "/privacy") {
       return page("Racebound Privacy Policy", PRIVACY_HTML);
     }

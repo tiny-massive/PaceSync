@@ -74,8 +74,18 @@ class ClaudeParserService {
             ) { group in
                 for dto in batch {
                     group.addTask { [self] in
-                        let segs = try await self.parseSegments(from: dto.rawText)
-                        return self.makeWorkoutDay(from: dto, segments: segs)
+                        do {
+                            let segs = try await self.parseSegments(from: dto.rawText)
+                            return self.makeWorkoutDay(from: dto, segments: segs)
+                        } catch is ResponseDecodeError {
+                            // Two malformed responses in a row: keep the day VISIBLE as an
+                            // open run with its verbatim text — never a silent fake rest day.
+                            // (Transport errors rethrow and fail the whole import loudly.)
+                            print("⚠️ [ClaudeParser] Phase 2 failed twice for '\(dto.title)' — keeping as open workout")
+                            let fallback = WorkoutSegment(id: UUID(), type: .easy,
+                                                          durationSeconds: nil, distanceMiles: nil)
+                            return self.makeWorkoutDay(from: dto, segments: [fallback])
+                        }
                     }
                 }
                 var days: [WorkoutDay] = []
@@ -97,8 +107,8 @@ class ClaudeParserService {
     // MARK: - Phase 1: Structure Extraction
 
     private func extractDayStructures(from chunk: String) async throws -> [DayStructureDTO] {
-        let json = try await callClaudeWithCache(chunk, prefix: "p1", maxTokens: 4000, prompt: buildPhase1Prompt)
-        return try decodeDayStructures(from: json)
+        try await callClaudeWithCache(chunk, prefix: "p1", maxTokens: 4000,
+                                      prompt: buildPhase1Prompt, decode: decodeDayStructures)
     }
 
     private func buildPhase1Prompt(for text: String) -> String {
@@ -162,8 +172,22 @@ class ClaudeParserService {
 
     private func parseSegments(from rawText: String) async throws -> [WorkoutSegment] {
         guard !isRestDay(rawText) else { return [] }
-        let json = try await callClaudeWithCache(rawText, prefix: "p2", maxTokens: 1500, prompt: buildPhase2Prompt)
-        return (try? decodeSegments(from: json)) ?? []
+        // Empty segments for a NON-rest day means the model failed the task — treat it
+        // like a malformed response, never like a legitimate rest day.
+        func attempt() async throws -> [WorkoutSegment] {
+            let segs = try await callClaudeWithCache(rawText, prefix: "p2", maxTokens: 1500,
+                                                     prompt: buildPhase2Prompt, decode: decodeSegments)
+            guard !segs.isEmpty else {
+                PlanParseCache.shared.remove(for: "p2:\(rawText)")
+                throw ResponseDecodeError(underlying: ImportError.notAWorkout)
+            }
+            return segs
+        }
+        do { return try await attempt() }
+        catch is ResponseDecodeError {
+            print("⚠️ [ClaudeParser] Phase 2 malformed — retrying once")
+            return try await attempt()   // transport errors still propagate untouched
+        }
     }
 
     private func buildPhase2Prompt(for rawText: String) -> String {
@@ -434,21 +458,40 @@ class ClaudeParserService {
 
     // MARK: - Cache-aware Claude Call
 
-    private func callClaudeWithCache(
+    /// Thrown when Claude's response can't be decoded into the expected shape — distinct
+    /// from transport errors so callers can retry/fall back WITHOUT masking a dead network.
+    struct ResponseDecodeError: LocalizedError {
+        let underlying: Error
+        var errorDescription: String? { (underlying as? LocalizedError)?.errorDescription
+            ?? "The AI response couldn't be read. Please try again." }
+    }
+
+    /// Cache-aware call that VALIDATES before caching: a response is only stored once it
+    /// decodes, so one malformed reply can never poison future imports. A cached entry that
+    /// fails to decode (poisoned by the old behaviour) is dropped and refetched — self-healing.
+    private func callClaudeWithCache<T>(
         _ text: String,
         prefix: String,
         maxTokens: Int,
-        prompt: (String) -> String
-    ) async throws -> String {
+        prompt: (String) -> String,
+        decode: (String) throws -> T
+    ) async throws -> T {
         let cacheKey = "\(prefix):\(text)"
         if let cached = PlanParseCache.shared.cachedJSON(for: cacheKey) {
-            print("✅ [ClaudeParser] Cache hit (\(prefix))")
-            return cached
+            if let decoded = try? decode(cached) {
+                print("✅ [ClaudeParser] Cache hit (\(prefix))")
+                return decoded
+            }
+            print("⚠️ [ClaudeParser] Invalid cache entry (\(prefix)) — dropping and refetching")
+            PlanParseCache.shared.remove(for: cacheKey)
         }
         print("🌐 [ClaudeParser] Cache miss (\(prefix)) — calling Claude")
         let json = try await callClaude(content: prompt(text), maxTokens: maxTokens)
+        let decoded: T
+        do { decoded = try decode(json) }
+        catch { throw ResponseDecodeError(underlying: error) }
         PlanParseCache.shared.store(json: json, for: cacheKey)
-        return json
+        return decoded
     }
 
     // MARK: - API Call

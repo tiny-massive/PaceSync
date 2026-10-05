@@ -13,6 +13,7 @@ enum ImportError: LocalizedError {
     case fileUnreadable
     case emptyContent
     case notAWorkout
+    case noScheduleFound
 
     var errorDescription: String? {
         switch self {
@@ -20,6 +21,7 @@ enum ImportError: LocalizedError {
         case .fileUnreadable:             return "Could not read the file."
         case .emptyContent:               return "The file appears to be empty."
         case .notAWorkout:                return "That doesn't look like a workout."
+        case .noScheduleFound:            return "Couldn't find a week-by-week schedule in that. Try a plan with clear weeks and days."
         }
     }
 }

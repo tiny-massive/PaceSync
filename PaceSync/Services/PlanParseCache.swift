@@ -33,6 +33,12 @@ final class PlanParseCache {
         try? json.write(to: cacheURL(for: text), atomically: true, encoding: .utf8)
     }
 
+    /// Removes one cached entry — used when a cached response turns out to be
+    /// malformed, so a bad parse can't be served forever.
+    func remove(for text: String) {
+        try? FileManager.default.removeItem(at: cacheURL(for: text))
+    }
+
     // MARK: - Maintenance
 
     /// Removes every cached entry.

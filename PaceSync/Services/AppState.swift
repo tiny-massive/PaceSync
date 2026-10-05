@@ -80,6 +80,9 @@ class AppState: ObservableObject {
             let plan = try await parser.parseTrainingPlan(from: text, title: title) { [weak self] progress, phase in
                 self?.advanceProgress(to: 0.35 + progress * 0.60, phase: phase)
             }
+            // Never save a plan with no days — junk input must fail loudly, not
+            // produce an empty "0-week plan" that looks like success.
+            guard !plan.allDays.isEmpty else { throw ImportError.noScheduleFound }
             completeProgress()
             try? await Task.sleep(nanoseconds: 350_000_000)
             planStore.save(plan, title: title, sourceURL: url, extractedText: text, raceDate: raceDate)
@@ -104,6 +107,7 @@ class AppState: ObservableObject {
             let plan = try await parser.parseTrainingPlan(from: rawText, title: title) { [weak self] progress, phase in
                 self?.advanceProgress(to: 0.20 + progress * 0.75, phase: phase)
             }
+            guard !plan.allDays.isEmpty else { throw ImportError.noScheduleFound }
             completeProgress()
             try? await Task.sleep(nanoseconds: 350_000_000)
             planStore.saveText(plan, title: title, rawText: rawText, raceDate: raceDate)
@@ -201,6 +205,10 @@ class AppState: ObservableObject {
             showToast("Workout created")
             return true
         } catch ImportError.notAWorkout {
+            workoutBuildError = "That doesn't look like a workout. Try something like “3K warm-up, 3×10min threshold, 2K cool-down.”"
+            return false
+        } catch let e as ClaudeParserService.ResponseDecodeError where e.underlying is ImportError {
+            // parseSegments wraps an empty/garbled parse — same friendly message.
             workoutBuildError = "That doesn't look like a workout. Try something like “3K warm-up, 3×10min threshold, 2K cool-down.”"
             return false
         } catch {

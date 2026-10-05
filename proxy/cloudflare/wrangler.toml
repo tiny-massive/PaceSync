@@ -4,6 +4,10 @@ compatibility_date = "2025-06-01"
 
 # racebound.app is bound directly to this worker: / (holding page → site),
 # /privacy, /support, and the /v1/messages proxy all live in one deploy.
+# workers_dev MUST stay true — every shipped build of the app calls
+# pacesync-proxy.pacesync.workers.dev/v1/messages (adding routes silently
+# disables the workers.dev host otherwise, which 404s all installed apps).
+workers_dev = true
 routes = [
   { pattern = "racebound.app", custom_domain = true }
 ]

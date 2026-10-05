@@ -106,7 +106,7 @@ struct AddPlanSheet: View {
                 .tint(Theme.accent)
             }
         } header: { SectionHeader(text: "Race day") } footer: {
-            Text("PaceSync dates every workout by counting back from race day. You can skip this and add it later.")
+            Text("Racebound dates every workout by counting back from race day. You can skip this and add it later.")
         }
     }
 
@@ -159,7 +159,7 @@ struct AddPlanSheet: View {
 
     @ViewBuilder private var oneOffSection: some View {
         Section {
-            Text("Not importing a whole plan? Describe a single workout and PaceSync will build it, ready for your Apple Watch.")
+            Text("Not importing a whole plan? Describe a single workout and Racebound will build it, ready for your Apple Watch.")
                 .font(.psCallout).foregroundStyle(Theme.ink2)
 
             TextField("3K warm-up, then 3×10min threshold, 2K cool-down", text: $workoutText, axis: .vertical)
@@ -381,7 +381,7 @@ struct PlanSettingsChrome: ViewModifier {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This removes the plan from PaceSync and clears its calendar events.")
+                Text("This removes the plan from Racebound and clears its calendar events.")
             }
             .alert("Something went wrong", isPresented: errorBinding(appState)) {
                 Button("OK") {}

@@ -28,12 +28,12 @@ final class EventKitService {
     private func paceSyncCalendar() -> EKCalendar? {
         if let id = UserDefaults.standard.string(forKey: calendarIDKey),
            let cal = store.calendar(withIdentifier: id) { return cal }
-        if let existing = store.calendars(for: .event).first(where: { $0.title == "PaceSync" }) {
+        if let existing = store.calendars(for: .event).first(where: { $0.title == "Racebound" }) {
             UserDefaults.standard.set(existing.calendarIdentifier, forKey: calendarIDKey)
             return existing
         }
         let cal = EKCalendar(for: .event, eventStore: store)
-        cal.title = "PaceSync"
+        cal.title = "Racebound"
         cal.cgColor = UIColor(red: 0.06, green: 0.54, blue: 0.29, alpha: 1).cgColor
         cal.source = store.defaultCalendarForNewEvents?.source
                   ?? store.sources.first { $0.sourceType == .local }

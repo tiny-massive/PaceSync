@@ -108,7 +108,7 @@ struct PlansView: View {
             Button("Remove", role: .destructive) { if let p = pendingRemove { appState.removePlan(p.id) } }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes the plan from PaceSync and clears its calendar events.")
+            Text("This removes the plan from Racebound and clears its calendar events.")
         }
     }
 
@@ -209,7 +209,7 @@ struct SettingsView: View {
                     }
                 }
             } header: { SectionHeader(text: "Sync") } footer: {
-                Text("Adds your workouts to a dedicated “PaceSync” calendar on your phone.")
+                Text("Adds your workouts to a dedicated “Racebound” calendar on your phone.")
             }
             .listRowBackground(Theme.surface)
 
@@ -268,7 +268,7 @@ struct SettingsView: View {
                     Text("\(appState.planStore.plans.count)").foregroundStyle(Theme.ink3)
                 }
                 LabeledContent("Version") {
-                    Text("PaceSync \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))")
+                    Text("Racebound \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))")
                         .foregroundStyle(Theme.ink3)
                 }
             }
@@ -287,9 +287,9 @@ struct SettingsView: View {
             defer { if accessed { url.stopAccessingSecurityScopedResource() } }
             if let data = try? Data(contentsOf: url) {
                 let r = appState.planStore.importBackup(data)
-                restoreResult = !r.valid ? "That file isn't a PaceSync backup."
+                restoreResult = !r.valid ? "That file isn't a Racebound backup."
                     : r.added > 0 ? "Restored \(r.added) plan\(r.added == 1 ? "" : "s")."
-                    : "Those plans are already in PaceSync."
+                    : "Those plans are already in Racebound."
             } else {
                 restoreResult = "Couldn't read that file."
             }
@@ -307,7 +307,7 @@ struct SettingsView: View {
         guard !appState.planStore.plans.isEmpty, let data = appState.planStore.exportData() else {
             exportURL = nil; return
         }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("PaceSync-backup.json")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Racebound-backup.json")
         try? data.write(to: url, options: .atomic)
         exportURL = url
     }

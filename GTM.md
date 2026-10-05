@@ -1,6 +1,6 @@
 # Go-to-market plan (compiled 2026-10-01, research-verified)
 
-Product (working code name PaceSync — **public name TBD, see Naming**): any training
+Product: **Racebound** (code name PaceSync internally): any training
 plan — PDF, text, or a typed sentence — becomes structured workouts in the native
 Apple Watch Workout app, anchored to race day, ticked off automatically from Health.
 No account. App is launch-ready at 2.0 (6); a build is believed to be in App Store
@@ -29,7 +29,7 @@ Connect from July.
 - Enroll in **Apple Small Business Program** (15% commission) if not already.
 - Later, only if telemetry demands: consumable parse-packs; tip jar (WorkOutDoors pattern).
 
-## Naming (ON ICE — blocks domain, listing, site copy)
+## Naming (DECIDED 2026-10-05: **Racebound** — register racebound.app immediately)
 PaceSync is dead publicly: "PaceSync: Music For Your Run" live in H&F + Dentsu
 "Pace Sync" mark + pacesync.com ransom-parked. Vetted-clean finalists (as of 10-01,
 .app free to register same-day): **Racebound** (recommended; race-day anchor, zero

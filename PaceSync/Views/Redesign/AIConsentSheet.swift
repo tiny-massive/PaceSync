@@ -27,7 +27,7 @@ struct AIConsentSheet: View {
                 .foregroundStyle(Theme.accent)
                 .padding(.top, Theme.s6)
 
-            Text("PaceSync uses AI to read your plan")
+            Text("Racebound uses AI to read your plan")
                 .font(.psTitle).foregroundStyle(Theme.ink)
                 .multilineTextAlignment(.center)
 

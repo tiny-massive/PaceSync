@@ -1,17 +1,17 @@
-# PaceSync — App Store listing (draft for owner edit, 2026-07-13)
+# Racebound — App Store listing (name locked 2026-10-05; was Racebound)
 
 Positioning locked with owner: **getting complex running workouts onto the native Apple
 Watch Workout app without manually creating them.**
 
 ## Name
-PaceSync
+Racebound
 
 ## Subtitle (max 30 chars)
 `Your plan, on your Apple Watch`  (30 — exactly at the limit)
 Alt: `Training plans → Apple Watch` (28) · `Workouts on your Watch, fast` (28)
 
 ## Promotional text (max 170 chars, editable without review)
-Describe a workout or upload your training plan — PaceSync builds every session on your
+Describe a workout or upload your training plan — Racebound builds every session on your
 Apple Watch, ready to run. No manual workout building, ever.
 
 ## Description (max 4,000 chars)
@@ -19,31 +19,31 @@ Simply describe your workout or upload your training plan — and every session 
 the native Workout app on your Apple Watch, structured and ready to run.
 
 Building interval workouts by hand on a tiny watch screen is the worst part of following
-a training plan. PaceSync removes it entirely. Give it the plan your coach wrote — a PDF,
+a training plan. Racebound removes it entirely. Give it the plan your coach wrote — a PDF,
 pasted text, or a Markdown file — or just type "6 × 800m at 5K pace, 90s jog recovery",
-and PaceSync turns it into real structured workouts: warm-ups, intervals, tempo blocks,
+and Racebound turns it into real structured workouts: warm-ups, intervals, tempo blocks,
 recoveries and cool-downs, each on the right day, each synced to your Watch.
 
 HOW IT WORKS
 • Upload your plan (PDF, text or Markdown) — or describe a single workout
-• PaceSync reads it with AI and anchors every session to your race day
+• Racebound reads it with AI and anchors every session to your race day
 • Tap Sync — the full structured workout lands in your Apple Watch's native Workout app
 • Run it with pace alerts, intervals and laps exactly as your coach intended
 
 BUILT FOR THE WHOLE TRAINING BLOCK
 • Race-day countdown with a week-by-week progress strip
 • Runs you finish are ticked off automatically from Apple Health
-• Every workout on your phone's calendar too, in a dedicated PaceSync calendar
+• Every workout on your phone's calendar too, in a dedicated Racebound calendar
 • Keep multiple plans, switch the active one, re-use a plan for your next race
 • One-off sessions alongside your plan, distances in km or miles, automatic backup
 
 PRIVATE BY DESIGN
-No account. No ads. No tracking. Your health data never leaves your phone — PaceSync only
+No account. No ads. No tracking. Your health data never leaves your phone — Racebound only
 reads finished workouts locally to mark your plan complete. The only thing ever sent off
 device is the plan text you choose to import, with your explicit permission, so AI can
 convert it into workouts.
 
-PaceSync needs an Apple Watch (watchOS 11+) for workout sync, and works as a plan manager
+Racebound needs an Apple Watch (watchOS 11+) for workout sync, and works as a plan manager
 without one.
 
 ## Keywords (max 100 bytes, comma-separated, no spaces needed)
@@ -73,7 +73,7 @@ Primary: Health & Fitness · Secondary: Sports
   content shown to the user — factor into sensitive-content answers as "none".
 
 ## Review notes (paste into App Review Information)
-PaceSync converts running training plans into structured Apple Watch workouts.
+Racebound converts running training plans into structured Apple Watch workouts.
 No account is needed. To test the core flow: tap "+" on the Home tab → in "Single custom
 workout" type: "15 min warm-up, then 4 × 1km at 4:30/km with 2 min jog recovery, 10 min
 cool-down" → Create Workout. On first use you'll see our AI-consent sheet (per Guideline

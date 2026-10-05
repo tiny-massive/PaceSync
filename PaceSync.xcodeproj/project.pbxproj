@@ -341,9 +341,10 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "PaceSync adds your training workouts to a dedicated PaceSync calendar.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "PaceSync reads your completed workouts so it can tick off finished runs in your plan.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "PaceSync needs access to schedule running workouts to your Apple Watch.";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Racebound adds your training workouts to a dedicated Racebound calendar.";
+				INFOPLIST_KEY_CFBundleDisplayName = Racebound;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Racebound reads your completed workouts so it can tick off finished runs in your plan.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Racebound needs access to schedule running workouts to your Apple Watch.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -378,9 +379,10 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "PaceSync adds your training workouts to a dedicated PaceSync calendar.";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "PaceSync reads your completed workouts so it can tick off finished runs in your plan.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "PaceSync needs access to schedule running workouts to your Apple Watch.";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Racebound adds your training workouts to a dedicated Racebound calendar.";
+				INFOPLIST_KEY_CFBundleDisplayName = Racebound;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Racebound reads your completed workouts so it can tick off finished runs in your plan.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Racebound needs access to schedule running workouts to your Apple Watch.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

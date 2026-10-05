@@ -300,7 +300,7 @@ class AppState: ObservableObject {
         // Request access first, then read the plan — so a plan captured before the await
         // can't go stale if the user switches plans during the permission prompt.
         guard await EventKitService.shared.requestAccess() else {
-            errorMessage = "Calendar access was denied. You can enable it in Settings ▸ PaceSync."
+            errorMessage = "Calendar access was denied. You can enable it in Settings ▸ Racebound."
             return
         }
         // If sync was turned off while we awaited access (e.g. during a plan switch), don't

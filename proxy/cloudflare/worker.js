@@ -41,9 +41,9 @@ h1{font-size:24px}h2{font-size:17px;margin-top:28px}a{color:#0f8a4c}
 }
 
 const PRIVACY_HTML = `
-<h1>PaceSync Privacy Policy</h1>
+<h1>Racebound Privacy Policy</h1>
 <p><em>Effective 13 July 2026 · Schoolwork Studio (Pty) Ltd</em></p>
-<p>PaceSync turns a running training plan into scheduled workouts on your Apple Watch
+<p>Racebound turns a running training plan into scheduled workouts on your Apple Watch
 and calendar. It is built to keep your data on your phone.</p>
 <h2>What leaves your device</h2>
 <p>One thing only: the <strong>training-plan text you choose to import</strong> (pasted text,
@@ -52,13 +52,13 @@ once, before the first import — it is sent over an encrypted connection to our
 forwarded to <strong>Anthropic's Claude API</strong>, which converts it into structured workouts.
 Anthropic retains API inputs and outputs for up to about 30 days for abuse monitoring, then
 deletes them (see Anthropic's privacy documentation). We attach no name, email, account, or
-device identifier — PaceSync has no accounts.</p>
+device identifier — Racebound has no accounts.</p>
 <h2>What never leaves your device</h2>
 <ul>
 <li><strong>Health data.</strong> PaceSync reads completed workouts from HealthKit only to tick
 off matching runs in your plan, entirely on your phone. Health data is never sent to us, to
 Anthropic, or to anyone else, and is never used for advertising.</li>
-<li><strong>Calendar.</strong> Events are created in a dedicated “PaceSync” calendar directly
+<li><strong>Calendar.</strong> Events are created in a dedicated “Racebound” calendar directly
 on your phone via Apple's EventKit.</li>
 <li><strong>Your plans and settings.</strong> Stored on-device, with an optional backup in
 your personal iCloud (Apple's key-value storage) that only you can access.</li>
@@ -75,8 +75,8 @@ iOS Settings at any time.</p>
 <p><a href="mailto:bernhardt@schoolwork.studio">bernhardt@schoolwork.studio</a></p>`;
 
 const SUPPORT_HTML = `
-<h1>PaceSync Support</h1>
-<p>PaceSync gets complex running workouts onto your Apple Watch without building them by
+<h1>Racebound Support</h1>
+<p>Racebound gets complex running workouts onto your Apple Watch without building them by
 hand — describe a workout or upload a plan, and it syncs to the native Workout app.</p>
 <h2>Common questions</h2>
 <p><strong>My workout isn't on my Watch.</strong> Open the workout in PaceSync and tap
@@ -96,10 +96,10 @@ export default {
     const url = new URL(request.url);
     // Public pages (required App Store listing URLs) — no token needed.
     if (request.method === "GET" && url.pathname === "/privacy") {
-      return page("PaceSync Privacy Policy", PRIVACY_HTML);
+      return page("Racebound Privacy Policy", PRIVACY_HTML);
     }
     if (request.method === "GET" && url.pathname === "/support") {
-      return page("PaceSync Support", SUPPORT_HTML);
+      return page("Racebound Support", SUPPORT_HTML);
     }
     if (url.pathname !== "/v1/messages") {
       return json(404, { error: { type: "not_found", message: "Unknown path" } });

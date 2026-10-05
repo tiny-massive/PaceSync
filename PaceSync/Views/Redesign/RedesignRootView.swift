@@ -169,6 +169,9 @@ struct SettingsView: View {
     @State private var exportURL: URL?
     @State private var showRestore = false
     @State private var restoreResult: String?
+    @ObservedObject private var purchases = PurchaseManager.shared
+    @State private var showPaywall = false
+    @State private var purchaseRestoreMessage: String?
 
     var body: some View {
         List {
@@ -256,6 +259,32 @@ struct SettingsView: View {
             .listRowBackground(Theme.surface)
 
             Section {
+                if purchases.isUnlocked {
+                    LabeledContent {
+                        Text("Unlocked").foregroundStyle(Theme.accent)
+                    } label: {
+                        Label("Full Version", systemImage: "checkmark.seal.fill")
+                    }
+                } else {
+                    Button { showPaywall = true } label: {
+                        Label("Unlock Full Version", systemImage: "lock.open")
+                    }
+                    .tint(Theme.accent)
+                    Button {
+                        Task {
+                            purchaseRestoreMessage = await purchases.restore()
+                                ? "Purchase restored — you're unlocked."
+                                : "No previous purchase found for this Apple Account."
+                        }
+                    } label: {
+                        Label("Restore Purchase", systemImage: "arrow.clockwise")
+                    }
+                    .tint(Theme.ink)
+                }
+            } header: { SectionHeader(text: "Purchase") }
+            .listRowBackground(Theme.surface)
+
+            Section {
                 Link(destination: AIConsent.privacyPolicyURL) {
                     Label("Privacy Policy", systemImage: "hand.raised")
                 }
@@ -276,6 +305,12 @@ struct SettingsView: View {
         }
         .scrollContentBackground(.hidden)
         .background(Theme.canvas.ignoresSafeArea())
+        .sheet(isPresented: $showPaywall) { PaywallSheet() }
+        .alert("Restore Purchase", isPresented: Binding(
+            get: { purchaseRestoreMessage != nil },
+            set: { if !$0 { purchaseRestoreMessage = nil } })) {
+            Button("OK") {}
+        } message: { Text(purchaseRestoreMessage ?? "") }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)   // centered, matching Home & Plans
         .onAppear { cacheSize = PlanParseCache.shared.cacheSizeString; prepareExport() }

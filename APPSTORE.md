@@ -85,3 +85,10 @@ requires a paired Apple Watch (WorkoutKit); the app is fully navigable without o
 6.9" set (1320×2868) captured from iPhone 17 Pro Max sim — light+dark × Home/Plans/Settings.
 In Figma on page "PS 4 · App Store shots" for framing/captions; raw PNGs uploadable as-is.
 Suggested caption for the lead shot: "Describe it. Sync it. Run it."
+
+## In-App Purchase setup (App Store Connect → Monetization → In-App Purchases)
+- Type: **Non-Consumable** · Product ID: `studio.schoolwork.pacesync.fullversion`
+- Reference name: Full Version · Price: **$12.99** (set intro $9.99 manually for launch week if desired)
+- Display name: "Racebound Full Version" · Description: "Unlimited plan imports and custom workouts, forever."
+- Needs one review screenshot (any screenshot of the paywall sheet works) + attach the IAP to the version when submitting.
+- Free tier in-app: 1 plan import + 3 custom workouts, counted only on success; re-imports always free.

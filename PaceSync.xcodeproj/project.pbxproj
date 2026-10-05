@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		AA0000000000000000000002 /* PaceSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000001 /* PaceSyncTests.swift */; };
+		AA000000000000000000001C /* PurchaseManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000001D /* PurchaseManagerTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -23,6 +24,7 @@
 /* Begin PBXFileReference section */
 		8382457C2F630672009B1E5C /* PaceSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PaceSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0000000000000000000001 /* PaceSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaceSyncTests.swift; sourceTree = "<group>"; };
+		AA000000000000000000001D /* PurchaseManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PurchaseManagerTests.swift; sourceTree = "<group>"; };
 		AA0000000000000000000003 /* PaceSyncTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PaceSyncTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -74,6 +76,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000001 /* PaceSyncTests.swift */,
+				AA000000000000000000001D /* PurchaseManagerTests.swift */,
 			);
 			path = PaceSyncTests;
 			sourceTree = "<group>";
@@ -192,6 +195,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA0000000000000000000002 /* PaceSyncTests.swift in Sources */,
+				AA000000000000000000001C /* PurchaseManagerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

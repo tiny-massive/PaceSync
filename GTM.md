@@ -25,7 +25,7 @@ Connect from July.
 - Evidence: hard paywall ≈12% conversion vs ≈2% soft freemium; WorkOutDoors $8.99
   one-off = niche floor; Runna $119.99/yr = anchor; one-time IAP beat subs in 2026
   indie modeling. COGS $0.50–3/user lifetime, →$0 with on-device Foundation Models.
-- Engineering needed: StoreKit 2 non-consumable + parse gating (small, ~1–2 days).
+- Engineering: DONE 2026-10-05 — PurchaseManager (StoreKit 2) + PaywallSheet + gates on all parse entry points; free tier = 1 plan import + 3 one-offs, counted only on successful saves; re-import free; Racebound.storekit test config in the shared scheme.
 - Enroll in **Apple Small Business Program** (15% commission) if not already.
 - Later, only if telemetry demands: consumable parse-packs; tip jar (WorkOutDoors pattern).
 

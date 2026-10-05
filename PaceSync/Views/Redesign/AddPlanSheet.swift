@@ -28,7 +28,27 @@ struct AddPlanSheet: View {
     // AI consent (5.1.2(i)) — gate the FIRST parse behind an explicit disclosure
     @State private var showAIConsent = false
     @State private var pendingAfterConsent: PendingParse? = nil
-    private enum PendingParse { case importPlan, createWorkout }
+    // Paywall — free allowance used up → one-time unlock before continuing
+    // (sheet(item:) so the sheet always sees WHICH action tripped the gate)
+    @State private var pendingAfterPaywall: PendingParse? = nil
+    private enum PendingParse: String, Identifiable {
+        case importPlan, createWorkout
+        var id: String { rawValue }
+    }
+
+    /// Paywall first (no point consenting to an action you can't run), then AI consent,
+    /// then the action itself. Each sheet resumes the chain when satisfied.
+    private func runGated(_ action: PendingParse) {
+        let allowed = action == .importPlan
+            ? PurchaseManager.shared.canImportPlan
+            : PurchaseManager.shared.canCreateOneOff
+        guard allowed else { pendingAfterPaywall = action; return }
+        guard AIConsent.given else { pendingAfterConsent = action; showAIConsent = true; return }
+        switch action {
+        case .importPlan:    startImport()
+        case .createWorkout: startCreateWorkout()
+        }
+    }
 
     private var hasPlanContent: Bool {
         attachedFileURL != nil || !planText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -69,6 +89,11 @@ struct AddPlanSheet: View {
                     case nil: break
                     }
                     pendingAfterConsent = nil
+                }
+            }
+            .sheet(item: $pendingAfterPaywall) { pending in
+                PaywallSheet(context: pending == .createWorkout ? .oneOff : .planImport) {
+                    runGated(pending)
                 }
             }
             .alert("No race day set", isPresented: $showRaceSkip) {
@@ -145,8 +170,7 @@ struct AddPlanSheet: View {
             }
 
             Button {
-                if AIConsent.given { startImport() }
-                else { pendingAfterConsent = .importPlan; showAIConsent = true }
+                runGated(.importPlan)
             } label: {
                 Text("Import Plan").frame(maxWidth: .infinity)
             }
@@ -173,8 +197,7 @@ struct AddPlanSheet: View {
             }
 
             Button {
-                if AIConsent.given { startCreateWorkout() }
-                else { pendingAfterConsent = .createWorkout; showAIConsent = true }
+                runGated(.createWorkout)
             } label: {
                 HStack(spacing: 8) {
                     if appState.isBuildingWorkout {
